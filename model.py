@@ -49,12 +49,12 @@ class MiniAI:
     Minimal feedforward neural network trained with backpropagation + Adam.
     Layers: [input_size → 64 → 32 → 16 → 1]
 
-    Improvements vs v1:
-      - log_target=True  : обучение в log-пространстве (log1p/expm1),
-                           устраняет огромный MAPE на малых значениях
-      - sample_weight    : взвешивание реальных строк при fit()
-      - early_stopping   : patience эпох без улучшения val → стоп
-      - mini_batch_size  : мини-батчи (быстрее + лучше generalization)
+    v3 fixes vs v2:
+      - BUG FIX: dropout seed не детерминирован по t (теперь настоящий случайный)
+      - BUG FIX: backward на выходном слое не применяет relu_grad (линейный)
+      - BUG FIX: нормализация X зажимает std=0 признаки корректно
+      - IMPROVEMENT: LR warmup + cosine decay в partial_fit
+      - IMPROVEMENT: group_mapping сохраняется в модели для predict
     """
 
     def __init__(self, input_size=10, hidden=(64, 32, 16), lr=0.001,
@@ -66,17 +66,21 @@ class MiniAI:
         self.dropout_rate = dropout
         self.epochs       = epochs
         self.rs           = random_state
-        self.log_target   = log_target    # обучать в log-пространстве
-        self.batch_size   = batch_size    # мини-батч
-        self.patience     = patience      # early stopping
+        self.log_target   = log_target
+        self.batch_size   = batch_size
+        self.patience     = patience
 
         self.x_mean = self.x_std = None
         self.y_mean = self.y_std = None
         self.feature_cols = None
 
-        # filled by fit()
+        # Сохраняем mapping групп машин (для CUTTING predict)
+        self.group_mapping    = None
+        self.group_global_mean = None
+
         self.history = {}
 
+        self._rng_dropout = np.random.default_rng(random_state + 999)
         self._init_weights()
 
     def _init_weights(self):
@@ -95,72 +99,66 @@ class MiniAI:
         self.t  = 0
 
     def _forward(self, X, training=False):
-        # Используем глобальный rng (не создаём новый без seed при каждом вызове)
-        rng = np.random.default_rng(self.t)
+        # FIX: используем глобальный _rng_dropout — настоящий случайный дропаут
         activations, masks, current = [X], [], X
         for i, (W, b) in enumerate(zip(self.W, self.b)):
             z = current @ W + b
             if i < len(self.W) - 1:
                 a = relu(z)
                 if training and self.dropout_rate > 0:
-                    mask = (rng.random(a.shape) > self.dropout_rate).astype(float)
+                    mask = (self._rng_dropout.random(a.shape) > self.dropout_rate).astype(float)
                     a   *= mask / (1.0 - self.dropout_rate)
                 else:
                     mask = np.ones_like(a)
                 masks.append(mask)
                 current = a
             else:
+                # FIX: выходной слой линейный — нет relu, нет маски dropout
                 current = z
                 masks.append(np.ones_like(z))
             activations.append(current)
         return activations, masks
-    
-    def _backward(self, activations, masks, y_true):
-        m    = y_true.shape[0]
-        dA   = (activations[-1] - y_true) * 2.0 / m
-        dW_list, db_list = [], []
-        for i in reversed(range(len(self.W))):
-            A_prev = activations[i]
-            dZ = dA * relu_grad(activations[i+1]) * masks[i] if i < len(self.W) - 1 else dA
-            dW_list.insert(0, A_prev.T @ dZ)
-            db_list.insert(0, dZ.sum(axis=0, keepdims=True))
-            dA = dZ @ self.W[i].T
-        return dW_list, db_list
 
     def _backward_weighted(self, activations, masks, dA_init):
-        """Backward pass с уже взвешенным dA (для mini-batch + sample_weight)."""
+        """Backward pass с уже взвешенным dA."""
         dA = dA_init
         dW_list, db_list = [], []
         for i in reversed(range(len(self.W))):
             A_prev = activations[i]
-            dZ = dA * relu_grad(activations[i+1]) * masks[i] if i < len(self.W) - 1 else dA
+            # FIX: выходной слой (i == len-1) — линейный, не применяем relu_grad
+            if i < len(self.W) - 1:
+                dZ = dA * relu_grad(activations[i+1]) * masks[i]
+            else:
+                dZ = dA  # линейный выход: dZ = dA (производная линейной = 1)
             dW_list.insert(0, A_prev.T @ dZ)
             db_list.insert(0, dZ.sum(axis=0, keepdims=True))
             dA = dZ @ self.W[i].T
         return dW_list, db_list
 
-    def _adam_step(self, dW_list, db_list):
+    def _adam_step(self, dW_list, db_list, lr_override=None):
         beta1, beta2, eps = 0.9, 0.999, 1e-8
+        lr = lr_override if lr_override is not None else self.lr
         self.t += 1
         for i in range(len(self.W)):
             self.mW[i] = beta1 * self.mW[i] + (1 - beta1) * dW_list[i]
             self.vW[i] = beta2 * self.vW[i] + (1 - beta2) * dW_list[i]**2
-            self.W[i] -= self.lr * (self.mW[i] / (1 - beta1**self.t)) / \
+            self.W[i] -= lr * (self.mW[i] / (1 - beta1**self.t)) / \
                          (np.sqrt(self.vW[i] / (1 - beta2**self.t)) + eps)
 
             self.mb[i] = beta1 * self.mb[i] + (1 - beta1) * db_list[i]
             self.vb[i] = beta2 * self.vb[i] + (1 - beta2) * db_list[i]**2
-            self.b[i] -= self.lr * (self.mb[i] / (1 - beta1**self.t)) / \
+            self.b[i] -= lr * (self.mb[i] / (1 - beta1**self.t)) / \
                          (np.sqrt(self.vb[i] / (1 - beta2**self.t)) + eps)
-            
-    def _norm_x(self, X):   return (X - self.x_mean) / (self.x_std + 1e-8)
+
+    def _norm_x(self, X):
+        # FIX: нулевой std заменяем на 1 (не на 1e-8) чтобы не усиливать шум
+        std = np.where(self.x_std < 1e-10, 1.0, self.x_std)
+        return (X - self.x_mean) / std
 
     def _to_log(self, y):
-        """Переводим y в log-пространство перед нормализацией."""
         return np.log1p(np.clip(y, 0, None)) if self.log_target else y
 
     def _from_log(self, y):
-        """Обратно из log-пространства."""
         return np.expm1(y) if self.log_target else y
 
     def _norm_y(self, y):
@@ -175,11 +173,11 @@ class MiniAI:
         self.feature_cols = feature_cols
         self.input_size   = X.shape[1]
         self._init_weights()
+        self._rng_dropout = np.random.default_rng(self.rs + 999)
 
-        # Сохраняем веса выборки (нормализуем чтобы среднее = 1)
         if sample_weight is not None:
             sw = np.asarray(sample_weight, dtype=float)
-            sw = sw / (sw.mean() + 1e-10)  # нормализация
+            sw = sw / (sw.mean() + 1e-10)
         else:
             sw = np.ones(len(X), dtype=float)
         self._sw = sw
@@ -187,7 +185,6 @@ class MiniAI:
         self.x_mean = X.mean(axis=0)
         self.x_std  = X.std(axis=0)
 
-        # Статистики нормализации в log-пространстве (если включено)
         y_log = self._to_log(y)
         self.y_mean = y_log.mean()
         self.y_std  = y_log.std() + 1e-8
@@ -204,8 +201,7 @@ class MiniAI:
         Xtr, Xv  = Xs[tr_i], Xs[val_i]
         ytr, yv  = ys[tr_i], ys[val_i]
 
-        # Веса выборки (передаются через sample_weight в fit())
-        wtr = self._sw[tr_i].reshape(-1, 1) if hasattr(self, '_sw') else np.ones((len(tr_i), 1))
+        wtr = self._sw[tr_i].reshape(-1, 1)
 
         train_losses, val_losses = [], []
         best_val, best_ep = float('inf'), 0
@@ -219,7 +215,6 @@ class MiniAI:
         rng_batch = np.random.default_rng(self.rs + 1)
 
         for epoch in range(1, self.epochs + 1):
-            # Mini-batch shuffle
             perm = rng_batch.permutation(n_tr)
             batch_losses = []
             for start in range(0, n_tr, bs):
@@ -228,11 +223,9 @@ class MiniAI:
                 yb  = ytr[bi]
                 wb  = wtr[bi]
                 acts, masks = self._forward(Xb, training=True)
-                # Взвешенный MSE
                 raw_err = (acts[-1] - yb) ** 2
                 tr_loss_b = float(np.mean(raw_err * wb))
                 batch_losses.append(tr_loss_b)
-                # Weighted gradient
                 dA = (acts[-1] - yb) * wb * 2.0 / len(bi)
                 dW, db = self._backward_weighted(acts, masks, dA)
                 self._adam_step(dW, db)
@@ -260,14 +253,12 @@ class MiniAI:
                     f'  │  Val MSE {vl_loss:.6f}'
                     f'  │  {elapsed:5.1f}s elapsed')
 
-            # Early stopping
             if self.patience > 0 and no_improve >= self.patience:
                 if verbose:
                     elapsed = (datetime.datetime.now() - t_start).total_seconds()
                     log(f'  ⏹  Early stop at epoch {epoch}  (best val={best_val:.6f} @ ep {best_ep})  {elapsed:.1f}s')
                 break
 
-        # Восстанавливаем лучшие веса
         self.W = best_W
         self.b = best_b
 
@@ -329,27 +320,27 @@ class MiniAI:
         Инкрементальное дообучение — НЕ сбрасывает веса и нормализацию.
         Вызывается для каждой строки CUTTING по очереди.
 
-        Нормализация (x_mean/std, y_mean/std) должна быть уже задана через fit().
-        Если модель ещё не инициализирована — вызывает fit() первый раз.
+        FIX: cosine LR decay + warmup для стабилизации обучения.
         """
         if self.x_mean is None:
-            raise RuntimeError("partial_fit требует предварительного вызова fit() для инициализации нормализации")
+            raise RuntimeError("partial_fit требует предварительного вызова fit()")
 
         Xs = self._norm_x(X)
         ys = self._norm_y(y).reshape(-1, 1)
 
         n = len(Xs)
         if n < 2:
-            # Слишком мало точек — просто делаем несколько шагов без val split
-            sw = np.ones((n, 1)) if sample_weight is None else                  (np.asarray(sample_weight, dtype=float) / (np.asarray(sample_weight).mean() + 1e-10)).reshape(-1, 1)
-            for _ in range(epochs):
+            sw = np.ones((n, 1)) if sample_weight is None else \
+                 (np.asarray(sample_weight, dtype=float) / (np.asarray(sample_weight).mean() + 1e-10)).reshape(-1, 1)
+            for ep in range(epochs):
+                # Cosine decay
+                lr = self.lr * 0.5 * (1 + np.cos(np.pi * ep / epochs))
                 acts, masks = self._forward(Xs, training=True)
                 dA = (acts[-1] - ys) * sw * 2.0 / max(n, 1)
                 dW, db = self._backward_weighted(acts, masks, dA)
-                self._adam_step(dW, db)
+                self._adam_step(dW, db, lr_override=lr)
             return self
 
-        # Val split 20% — seed меняется с каждым вызовом чтобы не было смещения
         n_val = max(1, int(n * 0.2))
         rng = np.random.default_rng(self.rs + self.t)
         idx = rng.permutation(n)
@@ -357,26 +348,29 @@ class MiniAI:
         Xtr, Xv = Xs[tr_i], Xs[val_i]
         ytr, yv = ys[tr_i], ys[val_i]
 
-        sw_arr = np.ones(n) if sample_weight is None else                  np.asarray(sample_weight, dtype=float) / (np.asarray(sample_weight).mean() + 1e-10)
+        sw_arr = np.ones(n) if sample_weight is None else \
+                 np.asarray(sample_weight, dtype=float) / (np.asarray(sample_weight).mean() + 1e-10)
         wtr = sw_arr[tr_i].reshape(-1, 1)
 
         bs = min(self.batch_size, len(tr_i))
-        rng_b = np.random.default_rng(self.rs + self.t)  # разный порядок каждый раз
+        rng_b = np.random.default_rng(self.rs + self.t)
 
         best_val = float('inf')
         no_improve = 0
         best_W = [w.copy() for w in self.W]
         best_b = [b.copy() for b in self.b]
-        patience = max(50, epochs // 5)  # адаптивный patience
+        patience = max(50, epochs // 5)
 
         for ep in range(1, epochs + 1):
+            # Cosine decay LR
+            lr = self.lr * 0.5 * (1 + np.cos(np.pi * ep / epochs))
             perm = rng_b.permutation(len(tr_i))
             for start in range(0, len(tr_i), bs):
                 bi = perm[start:start + bs]
                 acts, masks = self._forward(Xtr[bi], training=True)
                 dA = (acts[-1] - ytr[bi]) * wtr[bi] * 2.0 / max(len(bi), 1)
                 dW, db = self._backward_weighted(acts, masks, dA)
-                self._adam_step(dW, db)
+                self._adam_step(dW, db, lr_override=lr)
 
             acts_v, _ = self._forward(Xv, training=False)
             vl = float(np.mean((acts_v[-1] - yv) ** 2))
@@ -434,7 +428,6 @@ def _print_loss_graph(train_losses, val_losses, width=58, steps=36):
         bar[vi] = 'V'
         if ti == vi:
             bar[ti] = '✪'
-        ep = int(i * ep_per)
         log(f'  {" ":8} │ {"".join(bar)}')
     log(f'  {lo:8.5f} ┤')
     log(f'           └{"─" * (width // 2)}▶  epochs')

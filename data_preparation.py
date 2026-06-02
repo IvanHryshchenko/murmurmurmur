@@ -9,7 +9,7 @@ data_preparation.py
     Min Gage, Max Gage, Min Length, Max Length, Global Sec/Pc (GCSP).
   
   Нейросеть учится ПРЕДСКАЗЫВАТЬ Global Sec/Pc (время на операцию)
-  по параметрам Min/Max Gage и Min/Max Length.
+  по параметрам Min/Max Gage и Min/Max Length + группа машины.
   
   При обучении/предсказании QTY=1 подставляется в каждую строку по очереди
   (I3=1, I4=1, ..., I681=1), чтобы активировать строку и получить
@@ -158,12 +158,31 @@ def load_cutting_sheet(file_path, sheet_name='CUTTING'):
     return df
 
 
-def create_cutting_features(df):
+def _encode_machine_group(df_cutting, df_target=None):
+    """
+    Target-encoding группы машины по среднему log(GCSP).
+    Возвращает (encoded_series_for_cutting, mapping_dict).
+    Если df_target=None — кодируем сам df_cutting (для обучения).
+    """
+    log_gcsp = np.log1p(df_cutting['gcsp'])
+    mean_per_group = log_gcsp.groupby(df_cutting['machine_group']).mean()
+    global_mean = float(log_gcsp.mean())
+    mapping = mean_per_group.to_dict()
+
+    if df_target is None:
+        encoded = df_cutting['machine_group'].map(mapping).fillna(global_mean)
+    else:
+        encoded = df_target['machine_group'].map(mapping).fillna(global_mean)
+
+    return encoded, mapping, global_mean
+
+
+def create_cutting_features(df, group_mapping=None, group_global_mean=None):
     """
     Инжиниринг признаков для листа CUTTING.
 
     Входные признаки (что знаем о проводе/операции):
-      min_gage, max_gage, min_len, max_len
+      min_gage, max_gage, min_len, max_len + machine_group (target-encoded)
     Целевая переменная: gcsp (Global Sec/Pc)
 
     При подстановке QTY=1:  TOTAL_TIME = gcsp * 1 = gcsp
@@ -193,11 +212,21 @@ def create_cutting_features(df):
     df['gage_x_len']    = df['mid_gage'] * df['mid_len']
     df['gage_x_maxlen'] = df['max_gage'] * df['max_len']
 
+    # Target-encoded machine_group (главный предиктор)
+    if group_mapping is not None:
+        global_mean = group_global_mean if group_global_mean is not None else 0.0
+        df['group_encoded'] = df['machine_group'].map(group_mapping).fillna(global_mean)
+    else:
+        # Вычисляем на лету (для обучения)
+        _, mapping, global_mean = _encode_machine_group(df)
+        df['group_encoded'] = df['machine_group'].map(mapping).fillna(global_mean)
+
     return df
 
 
-# Колонки признаков для CUTTING
+# Колонки признаков для CUTTING (добавлен group_encoded)
 FEATURE_COLS_CUTTING = [
+    'group_encoded',
     'min_gage', 'max_gage', 'min_len', 'max_len',
     'gage_range', 'len_range', 'mid_gage', 'mid_len',
     'min_gage_log', 'max_gage_log', 'min_len_log', 'max_len_log',
@@ -392,40 +421,15 @@ def build_augmented_dataset(file_path, sheet_name,
                             use_zero_qty_rows=True):
     """
     Строим расширенный обучающий датасет для generic-листа.
-
-    Алгоритм (концепт Кирилла Шилохвостова):
-      Для каждой строки i из CUTTING (строки 3..681):
-        1. Берём: min_gage_i, max_gage_i, min_len_i, max_len_i, gcsp_i
-        2. Загружаем generic-лист (LEAD PREP и т.д.)
-        3. Для каждой строки j в generic-листе, где QTY=0/None:
-              - Подставляем QTY=1
-              - Если в строке j нет своих min/max gage/len — подставляем из строки i CUTTING
-              - TOTAL = GCSP_j * QTY = GCSP_j * 1 = GCSP_j  (GCSP берём из листа)
-              - Записываем как обучающую точку
-        4. Строки j с уже заполненным QTY > 0 — берём как есть (реальные данные)
-
-    Признаки для каждой точки:
-        GCSP (из generic-листа), QTY=1,
-        min_gage, max_gage, min_len, max_len (из CUTTING если нет своих),
-        + производные фичи
-
-    Целевая переменная: TOTAL = GCSP * QTY
-
-    Возвращает DataFrame со всеми обучающими точками.
-    Размер: len(df_cutting) * len(zero_qty_rows_in_sheet) + real_rows
     """
-    # 1. Загружаем generic-лист один раз
     df_sheet, _ = load_sheet_dynamic(file_path, sheet_name)
 
     if df_sheet.empty:
         return pd.DataFrame()
 
-    # Разделяем на строки с реальными QTY и строки-"слоты" (QTY=0/None)
     real_rows = df_sheet[df_sheet['TOTAL'] > 0].copy()
     slot_rows = df_sheet[df_sheet['TOTAL'] <= 0].copy() if use_zero_qty_rows else pd.DataFrame()
 
-    # Медианные wire-параметры из CUTTING — используем для реальных строк
-    # вместо нулей, чтобы не вносить ложный сигнал "нули = реальные данные"
     med_min_gage = float(df_cutting['min_gage'].median())
     med_max_gage = float(df_cutting['max_gage'].median())
     med_min_len  = float(df_cutting['min_len'].median())
@@ -433,9 +437,6 @@ def build_augmented_dataset(file_path, sheet_name,
 
     augmented_records = []
 
-    # 2. Реальные строки идут в обучение с медианными wire-параметрами
-    # (конкретные параметры провода для этих строк неизвестны,
-    #  медиана — наименее смещённая оценка)
     for _, r in real_rows.iterrows():
         augmented_records.append({
             'GCSP':      r['GCSP'],
@@ -449,18 +450,16 @@ def build_augmented_dataset(file_path, sheet_name,
             'source':    'real',
         })
 
-    # 3. Для каждой строки i из CUTTING — активируем слоты с QTY=1
     if not slot_rows.empty:
         for _, cutting_row in df_cutting.iterrows():
             c_min_gage = float(cutting_row['min_gage'])
             c_max_gage = float(cutting_row['max_gage'])
             c_min_len  = float(cutting_row['min_len'])
             c_max_len  = float(cutting_row['max_len'])
-            # gcsp_cutting = cutting_row['gcsp']  # не используем напрямую
 
             for _, slot in slot_rows.iterrows():
                 gcsp_j = float(slot['GCSP'])
-                total_j = gcsp_j * 1.0  # QTY = 1
+                total_j = gcsp_j * 1.0
 
                 augmented_records.append({
                     'GCSP':      gcsp_j,

@@ -2,16 +2,11 @@
 predict.py — Предсказание по концепту заказчика
 -------------------------------------------------
 
-Для листа CUTTING:
-  1. Загружаем модель.
-  2. Перебираем строки I3..I681 по одной.
-  3. Для каждой строки подставляем QTY=1.
-  4. Нейросеть предсказывает GCSP по [MinGage, MaxGage, MinLen, MaxLen].
-  5. TOTAL TIME = pred_gcsp * 1 = pred_gcsp.
-  6. Проверяем: pred ≤ table_gcsp (pass/fail по каждой строке).
-  7. Записываем предсказанный TOTAL TIME в столбец J (SUB TOTAL).
-
-Для остальных листов — логика без изменений.
+v3 изменения:
+  - BUG FIX: больше не перезаписываем QTY для строк с реальным QTY > 0
+    (раньше QTY=1 ставился везде, разрушая оригинальные данные)
+  - Используем group_mapping из модели для корректного predict CUTTING
+  - Добавлен fallback если group_mapping не сохранён (совместимость)
 """
 
 import os
@@ -35,6 +30,7 @@ from data_preparation import (
     _is_header,
     _to_float,
     _col_index,
+    _encode_machine_group,
 )
 from model import MiniAI
 
@@ -83,7 +79,6 @@ def _pred_stats(preds, label='Predictions'):
 
 
 def _pass_fail_inline(y_true, y_pred):
-    """Возвращает массив булевых: pred ≤ true."""
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
     return y_pred <= y_true
@@ -113,26 +108,25 @@ log('  ' + '=' * W)
 log('  Sheet: CUTTING  (Wire-by-Wire Prediction)')
 log('  ' + '=' * W)
 log()
-log('  Алгоритм:')
-log('    1. Перебираем строки I3..I681 по одной.')
-log('    2. Подставляем QTY=1 → активируем строку.')
-log('    3. Нейросеть предсказывает GCSP по [MinGage, MaxGage, MinLen, MaxLen].')
-log('    4. TOTAL TIME = pred_gcsp * 1.')
-log('    5. Проверяем: pred ≤ table_gcsp (pass/fail).')
-log()
 
 df_cutting = load_cutting_sheet(FILE_PATH, 'CUTTING')
-df_feat    = create_cutting_features(df_cutting)
-
-log(f'  Строк для обработки: {len(df_cutting)}')
 
 mp     = model_path('CUTTING')
 use_ai = os.path.exists(mp)
 
 if use_ai:
     ai_cut = MiniAI.load(mp)
-    X      = df_feat[ai_cut.feature_cols].values
-    preds  = ai_cut.predict(X)
+
+    # Получаем group_mapping из модели (если сохранён) или пересчитываем
+    if hasattr(ai_cut, 'group_mapping') and ai_cut.group_mapping:
+        gmap   = ai_cut.group_mapping
+        ggmean = ai_cut.group_global_mean or 0.0
+    else:
+        _, gmap, ggmean = _encode_machine_group(df_cutting)
+
+    df_feat = create_cutting_features(df_cutting, gmap, ggmean)
+    X       = df_feat[ai_cut.feature_cols].values
+    preds   = ai_cut.predict(X)
     log(f'  ✅ AI модель загружена — {len(preds)} предсказаний')
     if ai_cut.history:
         m = ai_cut.history.get('metrics_all', {})
@@ -140,11 +134,9 @@ if use_ai:
         log(f'    MAE={m.get("mae",0):.4f}  RMSE={m.get("rmse",0):.4f}'
             f'  R²={m.get("r2",0):.4f}  MAPE={m.get("mape",0):.2f}%')
 else:
-    # Fallback: pred_gcsp = табличный gcsp (без изменений)
     preds = df_cutting['gcsp'].values.copy()
     log(f'  ⚠️  Нет модели — fallback (pred = table GCSP)')
 
-# Pass/Fail по каждой строке
 table_gcsp = df_cutting['gcsp'].values
 passed     = _pass_fail_inline(table_gcsp, preds)
 
@@ -155,7 +147,6 @@ log(f'  Pass (pred ≤ ref): {passed.sum():4d}  ({passed.mean()*100:.1f}%)')
 log(f'  Fail (pred > ref): {(~passed).sum():4d}  ({(~passed).mean()*100:.1f}%)')
 log()
 
-# Показываем детали по каждой строке (первые 10 и последние 5)
 log('  Детали (первые 10 строк):')
 log(f'  {"Excel":>6} {"MinG":>6} {"MaxG":>6} {"MinL":>7} {"MaxL":>7}'
     f' {"GCSP_ref":>9} {"GCSP_pred":>9} {"Pass":>6}')
@@ -175,22 +166,28 @@ if len(df_cutting) > 10:
             f' {row["gcsp"]:9.4f} {preds[idx]:9.4f}'
             f' {"✅" if passed[idx] else "❌":>6}')
 
-# Записываем в Excel: столбец J (SUB TOTAL = I*H, но I=1 → J = GCSP_pred * 1)
+# Записываем в Excel
+# BUG FIX: QTY=1 ставим ТОЛЬКО для строк где QTY был 0/None,
+# чтобы не разрушать оригинальные QTY
 ws_cut = wb['CUTTING']
 written_cut = 0
 
 for idx, (_, row_data) in enumerate(df_cutting.iterrows()):
     excel_row = int(row_data['excel_row'])
     pred_gcsp = float(preds[idx])
-    # QTY=1 подставляем в столбец I (9-й, 1-based)
-    ws_cut.cell(row=excel_row, column=9).value = 1
-    ws_cut.cell(row=excel_row, column=9).number_format = '0'
-    # TOTAL TIME = pred_gcsp * 1 = pred_gcsp → пишем в J (10-й, 1-based)
+
+    # QTY: ставим 1 только если оригинальный QTY=0 (слот-строка)
+    orig_qty = row_data['qty']
+    if orig_qty == 0.0:
+        ws_cut.cell(row=excel_row, column=9).value = 1
+        ws_cut.cell(row=excel_row, column=9).number_format = '0'
+
+    # TOTAL TIME = pred_gcsp (в J, 10-й столбец)
     _write_cell(ws_cut.cell(row=excel_row, column=10), pred_gcsp)
     written_cut += 1
 
 log()
-log(f'  ✅ Записано {written_cut} строк (QTY=1 в I, pred_GCSP в J)')
+log(f'  ✅ Записано {written_cut} строк (pred_GCSP в J, QTY=1 только для пустых слотов)')
 
 all_results.append(dict(
     sheet='CUTTING', rows=len(df_cutting), written=written_cut,
@@ -282,8 +279,6 @@ for sheet_name in GENERIC_SHEETS:
                                 method='—', pass_pct=0.0, mean_p=0.0, std_p=0.0))
         continue
 
-    # Добавляем медианные wire-параметры из CUTTING для корректного
-    # построения признаков (модели обучались на create_features_augmented)
     med_min_gage = float(df_cutting['min_gage'].median())
     med_max_gage = float(df_cutting['max_gage'].median())
     med_min_len  = float(df_cutting['min_len'].median())
@@ -300,7 +295,6 @@ for sheet_name in GENERIC_SHEETS:
 
     if use_ai:
         ai    = MiniAI.load(mp)
-        # Используем feature_cols модели — гарантирует совместимость
         X     = df_feat[ai.feature_cols].values
         preds = ai.predict(X)
         log(f'  ✅ AI модель загружена — {len(preds)} предсказаний')
@@ -312,7 +306,6 @@ for sheet_name in GENERIC_SHEETS:
         preds[zero_qty_mask] = df['GCSP'].values[zero_qty_mask] * median_ratio
         log(f'  ⚠️  Нет модели — fallback')
 
-    # Pass/fail для строк с известным TOTAL
     known_vals  = df['TOTAL'].values
     known_mask2 = known_vals > 0
     if known_mask2.sum() > 0:
@@ -372,6 +365,7 @@ for sheet_name in GENERIC_SHEETS:
         if tot_col_1 <= len(row_cells):
             _write_cell(row_cells[tot_col_1 - 1], meta['pred'])
             written += 1
+        # BUG FIX: QTY заполняем только если реально 0 (слот)
         if meta['qty'] == 0.0 and qty_col_1 <= len(row_cells):
             computed_qty = max(0.0, meta['pred'] / meta['gcsp']) if meta['gcsp'] > 0 else 0.0
             qcell = row_cells[qty_col_1 - 1]

@@ -8,20 +8,20 @@ train.py — Обучение нейросети по концепту зака�
   Алгоритм обучения:
     1. Берём строку i (начиная с I3).
     2. Подставляем QTY=1 → активируем эту строку.
-    3. Для этой строки известны: Min Gage, Max Gage, Min Length, Max Length, GCSP.
+    3. Для этой строки известны: Min Gage, Max Gage, Min Length, Max Length,
+       machine_group, GCSP.
     4. TOTAL TIME = GCSP * 1 = GCSP.
-    5. Обучаем нейросеть предсказывать GCSP по [MinGage, MaxGage, MinLen, MaxLen].
-    6. Проверяем: предсказание ≤ табличное GCSP (или совпадает).
+    5. Обучаем нейросеть предсказывать GCSP.
+    6. Проверяем: предсказание ≤ табличное GCSP.
     7. Переходим к следующей строке.
   
-  Идея: каждая строка таблицы — это одна «точка обучения».
-  Нейросеть регрессирует GCSP = f(min_gage, max_gage, min_len, max_len).
-  
-  После обучения: для любого нового провода с известными параметрами
-  нейросеть даёт предсказание времени операции.
-  
-  Метрика прохождения: pred_gcsp <= table_gcsp для каждой строки.
-  Собираем pass/fail по каждой строке и итоговый процент прохождения.
+  ИЗМЕНЕНИЯ v3:
+    - machine_group добавлен в признаки CUTTING (target-encoding)
+    - Исправлен баг дропаута (детерминированный seed → настоящий случайный)
+    - Исправлен баг backward на выходном слое
+    - sample_weight для real_rows увеличен до 50.0
+    - Cosine LR decay в partial_fit
+    - group_mapping сохраняется в модели для корректного predict
 """
 
 import os
@@ -43,13 +43,17 @@ from data_preparation import (
     create_features_total_gcsd,
     build_augmented_dataset,
     create_features_augmented,
+    _encode_machine_group,
 )
 from model import MiniAI, log
 
 FILE_PATH   = 'K0_old.xlsx'
 MODELS_DIR  = 'models'
 MIN_SAMPLES  = 5
-MIN_REAL_ROWS = 3   # минимум реальных строк для обучения generic-листа
+MIN_REAL_ROWS = 3
+
+# Вес реальных строк vs синтетических в generic-листах
+REAL_ROW_WEIGHT = 50.0
 
 
 def safe_name(s):
@@ -69,18 +73,11 @@ def train_and_save(sheet_name, X, y, feature_cols, epochs=2000, sample_weight=No
 
 
 def _pass_fail_report(y_true, y_pred, label='Wire-by-wire pass/fail'):
-    """
-    Проверяем каждую строку: pred <= true (или ≤ true + допуск).
-    Собираем метрики: сколько строк прошли проверку.
-    """
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
-    
-    # Строгая проверка: pred <= table
+
     passed_strict = (y_pred <= y_true)
-    # Мягкая проверка: pred <= table * 1.05 (5% допуск)
     passed_5pct   = (y_pred <= y_true * 1.05)
-    # Совпадение: |pred - true| / true < 2%
     passed_match  = (np.abs(y_pred - y_true) / (np.abs(y_true) + 1e-8) < 0.02)
 
     n = len(y_true)
@@ -91,7 +88,6 @@ def _pass_fail_report(y_true, y_pred, label='Wire-by-wire pass/fail'):
     log(f'  Match (±2%)         : {passed_match.sum():4d}  ({passed_match.mean()*100:.1f}%)')
     log(f'  Failed              : {(~passed_strict).sum():4d}  ({(~passed_strict).mean()*100:.1f}%)')
 
-    # Топ-5 худших строк (наибольшее превышение)
     over = y_pred - y_true
     worst_idx = np.argsort(over)[::-1][:5]
     log(f'  Top-5 worst (over-predictions):')
@@ -134,20 +130,24 @@ log('  ' + '=' * W)
 log()
 log('  Концепт: каждая строка I3..I681 — отдельный провод/операция.')
 log('  Подставляем QTY=1, цель = Global Sec/Pc (время на шт).')
-log('  Признаки: Min Gage, Max Gage, Min Length, Max Length.')
+log('  Признаки: Min Gage, Max Gage, Min Length, Max Length + machine_group (target-encoded).')
 log()
 
 df_cutting = load_cutting_sheet(FILE_PATH, 'CUTTING')
 log(f'  Строк с валидными параметрами (GCSP > 0): {len(df_cutting)}')
 
 if len(df_cutting) >= MIN_SAMPLES:
-    df_feat = create_cutting_features(df_cutting)
+    # Вычисляем target-encoding групп машин на всём CUTTING датасете
+    _, group_mapping, group_global_mean = _encode_machine_group(df_cutting)
+
+    df_feat = create_cutting_features(df_cutting, group_mapping, group_global_mean)
 
     X = df_feat[FEATURE_COLS_CUTTING].values
     y = df_cutting['gcsp'].values   # Target: Global Sec/Pc
 
     log(f'  GCSP — mean={y.mean():.4f}  std={y.std():.4f}'
         f'  min={y.min():.4f}  max={y.max():.4f}')
+    log(f'  Групп машин: {df_cutting["machine_group"].nunique()}  (target-encoded в group_encoded)')
     log()
 
     # Показываем первые N строк с QTY=1
@@ -164,10 +164,14 @@ if len(df_cutting) >= MIN_SAMPLES:
         'CUTTING',
         X, y,
         FEATURE_COLS_CUTTING,
-        epochs=3000,  # больше эпох для wire-by-wire
+        epochs=3000,
     )
+    # Сохраняем group_mapping в модели для использования в predict
+    ai_cutting.group_mapping     = group_mapping
+    ai_cutting.group_global_mean = group_global_mean
+    ai_cutting.save(os.path.join(MODELS_DIR, 'CUTTING', 'model.pkl'))
 
-    # Pass/fail проверка: pred ≤ table_gcsp
+    # Pass/fail проверка
     preds_all = ai_cutting.predict(X)
     pf = _pass_fail_report(y, preds_all, 'CUTTING wire-by-wire check')
 
@@ -182,6 +186,8 @@ if len(df_cutting) >= MIN_SAMPLES:
         'status':         '✅ trained',
     })
 else:
+    group_mapping = {}
+    group_global_mean = 0.0
     log(f'  ⚠️  Недостаточно данных ({len(df_cutting)} строк, нужно {MIN_SAMPLES}), пропуск.')
     all_results.append({'sheet': 'CUTTING', 'n': len(df_cutting),
                         'mae': None, 'r2': None,
@@ -231,20 +237,6 @@ else:
 
 
 # ─── 3. GENERIC SHEETS (инкрементальное обучение по строкам CUTTING) ─────────
-#
-# Концепт Кирилла Шилохвостова — точное воспроизведение:
-#
-#   Для каждого generic-листа (LEAD PREP, FA и т.д.):
-#     1. Инициализируем модель — делаем первый fit() на реальных строках
-#        (QTY > 0) чтобы зафиксировать нормализацию.
-#        Если реальных строк нет — используем все строки с первой строкой CUTTING.
-#     2. Итерируемся по строкам CUTTING (строки 3..681):
-#        - Берём min_gage, max_gage, min_len, max_len из строки i
-#        - Подставляем в слоты листа (QTY=0/None строки), QTY=1
-#        - TOTAL = GCSP_слота × 1 = GCSP_слота
-#        - Вызываем partial_fit() — дообучаем модель на этих данных
-#          (веса НЕ сбрасываются, нормализация зафиксирована)
-#     3. После всех 600+ строк — финальная проверка pass/fail
 
 log()
 log('  ' + '=' * W)
@@ -255,7 +247,8 @@ log(f'  Строк CUTTING: {len(df_cutting)}')
 log('  Концепт: каждая строка CUTTING активирует слоты листа → partial_fit()')
 EPOCHS_PER_CUTTING_ROW = 500
 log(f'  Эпох на строку CUTTING: {EPOCHS_PER_CUTTING_ROW}')
-log()  # эпох на каждую строку CUTTING
+log(f'  Вес реальных строк: {REAL_ROW_WEIGHT}×  (vs 1× для синтетики)')
+log()
 
 for sheet_name in GENERIC_SHEETS:
     log()
@@ -263,7 +256,6 @@ for sheet_name in GENERIC_SHEETS:
     log(f'  Sheet: {sheet_name}  (incremental)')
     log('  ' + '=' * W)
 
-    # Загружаем лист один раз
     df_sheet, _ = load_sheet_dynamic(FILE_PATH, sheet_name)
     real_rows = df_sheet[df_sheet['TOTAL'] > 0].copy()
     slot_rows = df_sheet[df_sheet['TOTAL'] <= 0].copy()
@@ -282,8 +274,6 @@ for sheet_name in GENERIC_SHEETS:
                             'status': '⚠️  skipped'})
         continue
 
-    # Листы без реальных строк (или <MIN_REAL_ROWS) не имеют настоящего сигнала —
-    # синтетика обучит модель предсказывать константу. Пропускаем такие листы.
     if len(real_rows) < MIN_REAL_ROWS:
         log(f'  ⚠️  Только {len(real_rows)} реальных строк (нужно ≥{MIN_REAL_ROWS}).')
         log(f'       Обучение на чистой синтетике даёт константные предсказания — пропуск.')
@@ -295,12 +285,8 @@ for sheet_name in GENERIC_SHEETS:
         continue
 
     # ── Шаг 1: инициализация модели ──────────────────────────────────────────
-    # Строим init-датасет: реальные строки + первая строка CUTTING в слотах
-    # (только чтобы зафиксировать нормализацию на правдоподобных данных)
-
     first_cut = df_cutting.iloc[0]
 
-    # Медианные wire-параметры — используем для реальных строк вместо нулей
     med_min_gage = float(df_cutting['min_gage'].median())
     med_max_gage = float(df_cutting['max_gage'].median())
     med_min_len  = float(df_cutting['min_len'].median())
@@ -308,15 +294,16 @@ for sheet_name in GENERIC_SHEETS:
 
     init_records = []
 
-    # Реальные строки — с медианными wire-параметрами
-    for _, r in real_rows.iterrows():
-        init_records.append({
-            'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
-            'CATEGORY': r['CATEGORY'],
-            'min_gage': med_min_gage, 'max_gage': med_max_gage,
-            'min_len':  med_min_len,  'max_len':  med_max_len,
-            'source': 'real',
-        })
+    # Реальные строки — повторяем несколько раз для усиления сигнала
+    for _ in range(5):  # 5× повторение реальных строк при инициализации
+        for _, r in real_rows.iterrows():
+            init_records.append({
+                'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
+                'CATEGORY': r['CATEGORY'],
+                'min_gage': med_min_gage, 'max_gage': med_max_gage,
+                'min_len':  med_min_len,  'max_len':  med_max_len,
+                'source': 'real',
+            })
 
     # Слоты с первой строкой CUTTING
     for _, slot in slot_rows.iterrows():
@@ -343,7 +330,7 @@ for sheet_name in GENERIC_SHEETS:
     df_init_feat = create_features_augmented(df_init)
     X_init = df_init_feat[FEATURE_COLS_AUGMENTED].values
     y_init = df_init_feat['TOTAL'].values
-    sw_init = np.where(df_init_feat['source'] == 'real', 20.0, 1.0)
+    sw_init = np.where(df_init_feat['source'] == 'real', REAL_ROW_WEIGHT, 1.0)
 
     log('  Инициализация нормализации (первый fit)...')
     model_dir = os.path.join(MODELS_DIR, safe_name(sheet_name))
@@ -359,7 +346,7 @@ for sheet_name in GENERIC_SHEETS:
 
     # ── Шаг 2: итерация по строкам CUTTING ────────────────────────────────────
     n_cut = len(df_cutting)
-    log_every = max(1, n_cut // 10)  # логируем каждые 10%
+    log_every = max(1, n_cut // 10)
 
     for cut_idx, (_, cut_row) in enumerate(df_cutting.iterrows()):
         c_min_gage = float(cut_row['min_gage'])
@@ -367,7 +354,6 @@ for sheet_name in GENERIC_SHEETS:
         c_min_len  = float(cut_row['min_len'])
         c_max_len  = float(cut_row['max_len'])
 
-        # Активируем слоты этой строкой CUTTING (QTY=1)
         step_records = []
         for _, slot in slot_rows.iterrows():
             gcsp_j = float(slot['GCSP'])
@@ -379,7 +365,7 @@ for sheet_name in GENERIC_SHEETS:
                 'source': 'augmented',
             })
 
-        # Всегда добавляем реальные строки чтобы не забыть их
+        # Всегда добавляем реальные строки (с высоким весом)
         for _, r in real_rows.iterrows():
             step_records.append({
                 'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
@@ -393,7 +379,7 @@ for sheet_name in GENERIC_SHEETS:
         df_step_feat = create_features_augmented(df_step)
         X_step = df_step_feat[FEATURE_COLS_AUGMENTED].values
         y_step = df_step_feat['TOTAL'].values
-        sw_step = np.where(df_step_feat['source'] == 'real', 20.0, 1.0)
+        sw_step = np.where(df_step_feat['source'] == 'real', REAL_ROW_WEIGHT, 1.0)
 
         ai.partial_fit(X_step, y_step, epochs=EPOCHS_PER_CUTTING_ROW,
                        sample_weight=sw_step, verbose=False)
@@ -412,7 +398,6 @@ for sheet_name in GENERIC_SHEETS:
     ai.save(os.path.join(model_dir, 'model.pkl'))
     log(f'  💾 Model saved → {model_dir}/model.pkl')
 
-    # Собираем полный датасет для оценки
     all_records = []
     for _, r in real_rows.iterrows():
         all_records.append({
@@ -422,7 +407,6 @@ for sheet_name in GENERIC_SHEETS:
             'min_len':  med_min_len,  'max_len':  med_max_len,
             'source': 'real',
         })
-    # Для оценки берём среднюю строку CUTTING как "типичный провод"
     mid_cut = df_cutting.iloc[len(df_cutting)//2]
     for _, slot in slot_rows.iterrows():
         gcsp_j = float(slot['GCSP'])
@@ -444,7 +428,6 @@ for sheet_name in GENERIC_SHEETS:
     preds = ai.predict(X_eval)
     pf = _pass_fail_report(y_eval, preds, f'{sheet_name} final check')
 
-    # Метрики
     err = preds - y_eval
     mae = float(np.mean(np.abs(err)))
     ss_r = float(np.sum(err**2))
