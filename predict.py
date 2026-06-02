@@ -24,10 +24,12 @@ from data_preparation import (
     FEATURE_COLS,
     FEATURE_COLS_TOTAL_GCSD,
     FEATURE_COLS_CUTTING,
+    FEATURE_COLS_AUGMENTED,
     load_cutting_sheet,
     create_cutting_features,
     load_sheet_dynamic,
     create_features,
+    create_features_augmented,
     load_and_prepare_total_gcsd,
     create_features_total_gcsd,
     _is_header,
@@ -280,12 +282,25 @@ for sheet_name in GENERIC_SHEETS:
                                 method='—', pass_pct=0.0, mean_p=0.0, std_p=0.0))
         continue
 
-    df_feat = create_features(df)
+    # Добавляем медианные wire-параметры из CUTTING для корректного
+    # построения признаков (модели обучались на create_features_augmented)
+    med_min_gage = float(df_cutting['min_gage'].median())
+    med_max_gage = float(df_cutting['max_gage'].median())
+    med_min_len  = float(df_cutting['min_len'].median())
+    med_max_len  = float(df_cutting['max_len'].median())
+    df = df.copy()
+    df['min_gage'] = med_min_gage
+    df['max_gage'] = med_max_gage
+    df['min_len']  = med_min_len
+    df['max_len']  = med_max_len
+
+    df_feat = create_features_augmented(df)
     mp      = model_path(sheet_name)
     use_ai  = os.path.exists(mp)
 
     if use_ai:
         ai    = MiniAI.load(mp)
+        # Используем feature_cols модели — гарантирует совместимость
         X     = df_feat[ai.feature_cols].values
         preds = ai.predict(X)
         log(f'  ✅ AI модель загружена — {len(preds)} предсказаний')

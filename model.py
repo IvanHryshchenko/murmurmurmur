@@ -95,7 +95,8 @@ class MiniAI:
         self.t  = 0
 
     def _forward(self, X, training=False):
-        rng = np.random.default_rng()
+        # Используем глобальный rng (не создаём новый без seed при каждом вызове)
+        rng = np.random.default_rng(self.t)
         activations, masks, current = [X], [], X
         for i, (W, b) in enumerate(zip(self.W, self.b)):
             z = current @ W + b
@@ -348,9 +349,9 @@ class MiniAI:
                 self._adam_step(dW, db)
             return self
 
-        # Val split 20%
+        # Val split 20% — seed меняется с каждым вызовом чтобы не было смещения
         n_val = max(1, int(n * 0.2))
-        rng = np.random.default_rng(self.rs)
+        rng = np.random.default_rng(self.rs + self.t)
         idx = rng.permutation(n)
         val_i, tr_i = idx[:n_val], idx[n_val:]
         Xtr, Xv = Xs[tr_i], Xs[val_i]

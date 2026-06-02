@@ -424,19 +424,28 @@ def build_augmented_dataset(file_path, sheet_name,
     real_rows = df_sheet[df_sheet['TOTAL'] > 0].copy()
     slot_rows = df_sheet[df_sheet['TOTAL'] <= 0].copy() if use_zero_qty_rows else pd.DataFrame()
 
+    # Медианные wire-параметры из CUTTING — используем для реальных строк
+    # вместо нулей, чтобы не вносить ложный сигнал "нули = реальные данные"
+    med_min_gage = float(df_cutting['min_gage'].median())
+    med_max_gage = float(df_cutting['max_gage'].median())
+    med_min_len  = float(df_cutting['min_len'].median())
+    med_max_len  = float(df_cutting['max_len'].median())
+
     augmented_records = []
 
-    # 2. Реальные строки идут в обучение без изменений (wire params неизвестны → 0)
+    # 2. Реальные строки идут в обучение с медианными wire-параметрами
+    # (конкретные параметры провода для этих строк неизвестны,
+    #  медиана — наименее смещённая оценка)
     for _, r in real_rows.iterrows():
         augmented_records.append({
             'GCSP':      r['GCSP'],
             'QTY':       r['QTY'],
             'TOTAL':     r['TOTAL'],
             'CATEGORY':  r['CATEGORY'],
-            'min_gage':  0.0,
-            'max_gage':  0.0,
-            'min_len':   0.0,
-            'max_len':   0.0,
+            'min_gage':  med_min_gage,
+            'max_gage':  med_max_gage,
+            'min_len':   med_min_len,
+            'max_len':   med_max_len,
             'source':    'real',
         })
 

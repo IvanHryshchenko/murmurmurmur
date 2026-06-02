@@ -48,7 +48,8 @@ from model import MiniAI, log
 
 FILE_PATH   = 'K0_old.xlsx'
 MODELS_DIR  = 'models'
-MIN_SAMPLES = 5
+MIN_SAMPLES  = 5
+MIN_REAL_ROWS = 3   # минимум реальных строк для обучения generic-листа
 
 
 def safe_name(s):
@@ -281,19 +282,39 @@ for sheet_name in GENERIC_SHEETS:
                             'status': '⚠️  skipped'})
         continue
 
+    # Листы без реальных строк (или <MIN_REAL_ROWS) не имеют настоящего сигнала —
+    # синтетика обучит модель предсказывать константу. Пропускаем такие листы.
+    if len(real_rows) < MIN_REAL_ROWS:
+        log(f'  ⚠️  Только {len(real_rows)} реальных строк (нужно ≥{MIN_REAL_ROWS}).')
+        log(f'       Обучение на чистой синтетике даёт константные предсказания — пропуск.')
+        log(f'       Добавьте реальные данные в лист "{sheet_name}" и повторите обучение.')
+        all_results.append({'sheet': sheet_name, 'n': len(real_rows),
+                            'mae': None, 'r2': None,
+                            'pass_strict_pct': None, 'pass_5pct_pct': None,
+                            'status': '⚠️  no real data'})
+        continue
+
     # ── Шаг 1: инициализация модели ──────────────────────────────────────────
     # Строим init-датасет: реальные строки + первая строка CUTTING в слотах
     # (только чтобы зафиксировать нормализацию на правдоподобных данных)
 
     first_cut = df_cutting.iloc[0]
+
+    # Медианные wire-параметры — используем для реальных строк вместо нулей
+    med_min_gage = float(df_cutting['min_gage'].median())
+    med_max_gage = float(df_cutting['max_gage'].median())
+    med_min_len  = float(df_cutting['min_len'].median())
+    med_max_len  = float(df_cutting['max_len'].median())
+
     init_records = []
 
-    # Реальные строки
+    # Реальные строки — с медианными wire-параметрами
     for _, r in real_rows.iterrows():
         init_records.append({
             'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
             'CATEGORY': r['CATEGORY'],
-            'min_gage': 0.0, 'max_gage': 0.0, 'min_len': 0.0, 'max_len': 0.0,
+            'min_gage': med_min_gage, 'max_gage': med_max_gage,
+            'min_len':  med_min_len,  'max_len':  med_max_len,
             'source': 'real',
         })
 
@@ -363,7 +384,8 @@ for sheet_name in GENERIC_SHEETS:
             step_records.append({
                 'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
                 'CATEGORY': r['CATEGORY'],
-                'min_gage': 0.0, 'max_gage': 0.0, 'min_len': 0.0, 'max_len': 0.0,
+                'min_gage': med_min_gage, 'max_gage': med_max_gage,
+                'min_len':  med_min_len,  'max_len':  med_max_len,
                 'source': 'real',
             })
 
@@ -396,7 +418,8 @@ for sheet_name in GENERIC_SHEETS:
         all_records.append({
             'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
             'CATEGORY': r['CATEGORY'],
-            'min_gage': 0.0, 'max_gage': 0.0, 'min_len': 0.0, 'max_len': 0.0,
+            'min_gage': med_min_gage, 'max_gage': med_max_gage,
+            'min_len':  med_min_len,  'max_len':  med_max_len,
             'source': 'real',
         })
     # Для оценки берём среднюю строку CUTTING как "типичный провод"
