@@ -48,16 +48,27 @@ class MiniAI:
     """
     Minimal feedforward neural network trained with backpropagation + Adam.
     Layers: [input_size → 64 → 32 → 16 → 1]
+
+    Improvements vs v1:
+      - log_target=True  : обучение в log-пространстве (log1p/expm1),
+                           устраняет огромный MAPE на малых значениях
+      - sample_weight    : взвешивание реальных строк при fit()
+      - early_stopping   : patience эпох без улучшения val → стоп
+      - mini_batch_size  : мини-батчи (быстрее + лучше generalization)
     """
 
     def __init__(self, input_size=10, hidden=(64, 32, 16), lr=0.001,
-                 dropout=0.15, epochs=2000, random_state=42):
+                 dropout=0.15, epochs=2000, random_state=42,
+                 log_target=True, batch_size=2048, patience=300):
         self.input_size   = input_size
         self.hidden       = hidden
         self.lr           = lr
         self.dropout_rate = dropout
         self.epochs       = epochs
         self.rs           = random_state
+        self.log_target   = log_target    # обучать в log-пространстве
+        self.batch_size   = batch_size    # мини-батч
+        self.patience     = patience      # early stopping
 
         self.x_mean = self.x_std = None
         self.y_mean = self.y_std = None
@@ -115,6 +126,18 @@ class MiniAI:
             dA = dZ @ self.W[i].T
         return dW_list, db_list
 
+    def _backward_weighted(self, activations, masks, dA_init):
+        """Backward pass с уже взвешенным dA (для mini-batch + sample_weight)."""
+        dA = dA_init
+        dW_list, db_list = [], []
+        for i in reversed(range(len(self.W))):
+            A_prev = activations[i]
+            dZ = dA * relu_grad(activations[i+1]) * masks[i] if i < len(self.W) - 1 else dA
+            dW_list.insert(0, A_prev.T @ dZ)
+            db_list.insert(0, dZ.sum(axis=0, keepdims=True))
+            dA = dZ @ self.W[i].T
+        return dW_list, db_list
+
     def _adam_step(self, dW_list, db_list):
         beta1, beta2, eps = 0.9, 0.999, 1e-8
         self.t += 1
@@ -130,40 +153,90 @@ class MiniAI:
                          (np.sqrt(self.vb[i] / (1 - beta2**self.t)) + eps)
             
     def _norm_x(self, X):   return (X - self.x_mean) / (self.x_std + 1e-8)
-    def _norm_y(self, y):   return (y - self.y_mean) / (self.y_std + 1e-8)
-    def _denorm_y(self, ys): return ys * self.y_std + self.y_mean
 
-    def fit(self, X, y, feature_cols, verbose=True):
+    def _to_log(self, y):
+        """Переводим y в log-пространство перед нормализацией."""
+        return np.log1p(np.clip(y, 0, None)) if self.log_target else y
+
+    def _from_log(self, y):
+        """Обратно из log-пространства."""
+        return np.expm1(y) if self.log_target else y
+
+    def _norm_y(self, y):
+        yl = self._to_log(y)
+        return (yl - self.y_mean) / (self.y_std + 1e-8)
+
+    def _denorm_y(self, ys):
+        y_raw = ys * self.y_std + self.y_mean
+        return self._from_log(y_raw)
+
+    def fit(self, X, y, feature_cols, verbose=True, sample_weight=None):
         self.feature_cols = feature_cols
         self.input_size   = X.shape[1]
         self._init_weights()
 
+        # Сохраняем веса выборки (нормализуем чтобы среднее = 1)
+        if sample_weight is not None:
+            sw = np.asarray(sample_weight, dtype=float)
+            sw = sw / (sw.mean() + 1e-10)  # нормализация
+        else:
+            sw = np.ones(len(X), dtype=float)
+        self._sw = sw
+
         self.x_mean = X.mean(axis=0)
         self.x_std  = X.std(axis=0)
-        self.y_mean = y.mean()
-        self.y_std  = y.std() + 1e-8
+
+        # Статистики нормализации в log-пространстве (если включено)
+        y_log = self._to_log(y)
+        self.y_mean = y_log.mean()
+        self.y_std  = y_log.std() + 1e-8
 
         Xs = self._norm_x(X)
         ys = self._norm_y(y).reshape(-1, 1)
 
         n     = len(Xs)
         n_val = max(1, int(n * 0.2))
-        idx   = np.random.default_rng(self.rs).permutation(n)
+        rng_split = np.random.default_rng(self.rs)
+        idx   = rng_split.permutation(n)
         val_i, tr_i = idx[:n_val], idx[n_val:]
 
         Xtr, Xv  = Xs[tr_i], Xs[val_i]
         ytr, yv  = ys[tr_i], ys[val_i]
 
+        # Веса выборки (передаются через sample_weight в fit())
+        wtr = self._sw[tr_i].reshape(-1, 1) if hasattr(self, '_sw') else np.ones((len(tr_i), 1))
+
         train_losses, val_losses = [], []
         best_val, best_ep = float('inf'), 0
+        no_improve = 0
+        best_W = [w.copy() for w in self.W]
+        best_b = [b.copy() for b in self.b]
 
         t_start = datetime.datetime.now()
+        n_tr = len(tr_i)
+        bs   = min(self.batch_size, n_tr)
+        rng_batch = np.random.default_rng(self.rs + 1)
 
         for epoch in range(1, self.epochs + 1):
-            acts, masks = self._forward(Xtr, training=True)
-            tr_loss     = float(np.mean((acts[-1] - ytr) ** 2))
-            dW, db      = self._backward(acts, masks, ytr)
-            self._adam_step(dW, db)
+            # Mini-batch shuffle
+            perm = rng_batch.permutation(n_tr)
+            batch_losses = []
+            for start in range(0, n_tr, bs):
+                bi  = perm[start:start + bs]
+                Xb  = Xtr[bi]
+                yb  = ytr[bi]
+                wb  = wtr[bi]
+                acts, masks = self._forward(Xb, training=True)
+                # Взвешенный MSE
+                raw_err = (acts[-1] - yb) ** 2
+                tr_loss_b = float(np.mean(raw_err * wb))
+                batch_losses.append(tr_loss_b)
+                # Weighted gradient
+                dA = (acts[-1] - yb) * wb * 2.0 / len(bi)
+                dW, db = self._backward_weighted(acts, masks, dA)
+                self._adam_step(dW, db)
+
+            tr_loss = float(np.mean(batch_losses))
 
             acts_v, _   = self._forward(Xv, training=False)
             vl_loss     = float(np.mean((acts_v[-1] - yv) ** 2))
@@ -173,6 +246,11 @@ class MiniAI:
 
             if vl_loss < best_val:
                 best_val, best_ep = vl_loss, epoch
+                no_improve = 0
+                best_W = [w.copy() for w in self.W]
+                best_b = [b.copy() for b in self.b]
+            else:
+                no_improve += 1
 
             if verbose and epoch % 200 == 0:
                 elapsed = (datetime.datetime.now() - t_start).total_seconds()
@@ -180,6 +258,17 @@ class MiniAI:
                     f'  │  Train MSE {tr_loss:.6f}'
                     f'  │  Val MSE {vl_loss:.6f}'
                     f'  │  {elapsed:5.1f}s elapsed')
+
+            # Early stopping
+            if self.patience > 0 and no_improve >= self.patience:
+                if verbose:
+                    elapsed = (datetime.datetime.now() - t_start).total_seconds()
+                    log(f'  ⏹  Early stop at epoch {epoch}  (best val={best_val:.6f} @ ep {best_ep})  {elapsed:.1f}s')
+                break
+
+        # Восстанавливаем лучшие веса
+        self.W = best_W
+        self.b = best_b
 
         elapsed_total = (datetime.datetime.now() - t_start).total_seconds()
 
@@ -232,6 +321,76 @@ class MiniAI:
             _print_loss_graph(train_losses, val_losses)
             _print_report(self.history, feature_cols, fi_order, w1_imp, elapsed_total)
 
+        return self
+
+    def partial_fit(self, X, y, epochs=500, sample_weight=None, verbose=False):
+        """
+        Инкрементальное дообучение — НЕ сбрасывает веса и нормализацию.
+        Вызывается для каждой строки CUTTING по очереди.
+
+        Нормализация (x_mean/std, y_mean/std) должна быть уже задана через fit().
+        Если модель ещё не инициализирована — вызывает fit() первый раз.
+        """
+        if self.x_mean is None:
+            raise RuntimeError("partial_fit требует предварительного вызова fit() для инициализации нормализации")
+
+        Xs = self._norm_x(X)
+        ys = self._norm_y(y).reshape(-1, 1)
+
+        n = len(Xs)
+        if n < 2:
+            # Слишком мало точек — просто делаем несколько шагов без val split
+            sw = np.ones((n, 1)) if sample_weight is None else                  (np.asarray(sample_weight, dtype=float) / (np.asarray(sample_weight).mean() + 1e-10)).reshape(-1, 1)
+            for _ in range(epochs):
+                acts, masks = self._forward(Xs, training=True)
+                dA = (acts[-1] - ys) * sw * 2.0 / max(n, 1)
+                dW, db = self._backward_weighted(acts, masks, dA)
+                self._adam_step(dW, db)
+            return self
+
+        # Val split 20%
+        n_val = max(1, int(n * 0.2))
+        rng = np.random.default_rng(self.rs)
+        idx = rng.permutation(n)
+        val_i, tr_i = idx[:n_val], idx[n_val:]
+        Xtr, Xv = Xs[tr_i], Xs[val_i]
+        ytr, yv = ys[tr_i], ys[val_i]
+
+        sw_arr = np.ones(n) if sample_weight is None else                  np.asarray(sample_weight, dtype=float) / (np.asarray(sample_weight).mean() + 1e-10)
+        wtr = sw_arr[tr_i].reshape(-1, 1)
+
+        bs = min(self.batch_size, len(tr_i))
+        rng_b = np.random.default_rng(self.rs + self.t)  # разный порядок каждый раз
+
+        best_val = float('inf')
+        no_improve = 0
+        best_W = [w.copy() for w in self.W]
+        best_b = [b.copy() for b in self.b]
+        patience = max(50, epochs // 5)  # адаптивный patience
+
+        for ep in range(1, epochs + 1):
+            perm = rng_b.permutation(len(tr_i))
+            for start in range(0, len(tr_i), bs):
+                bi = perm[start:start + bs]
+                acts, masks = self._forward(Xtr[bi], training=True)
+                dA = (acts[-1] - ytr[bi]) * wtr[bi] * 2.0 / max(len(bi), 1)
+                dW, db = self._backward_weighted(acts, masks, dA)
+                self._adam_step(dW, db)
+
+            acts_v, _ = self._forward(Xv, training=False)
+            vl = float(np.mean((acts_v[-1] - yv) ** 2))
+            if vl < best_val:
+                best_val = vl
+                no_improve = 0
+                best_W = [w.copy() for w in self.W]
+                best_b = [b.copy() for b in self.b]
+            else:
+                no_improve += 1
+            if no_improve >= patience:
+                break
+
+        self.W = best_W
+        self.b = best_b
         return self
 
     def predict(self, X):

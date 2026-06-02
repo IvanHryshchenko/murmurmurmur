@@ -383,3 +383,140 @@ GENERIC_SHEETS = [
     'FA Taping',
     'FA Miscellaneos',
 ]
+
+
+# ─── CROSS-SHEET AUGMENTATION (CUTTING → GENERIC) ────────────────────────────
+
+def build_augmented_dataset(file_path, sheet_name,
+                            df_cutting,
+                            use_zero_qty_rows=True):
+    """
+    Строим расширенный обучающий датасет для generic-листа.
+
+    Алгоритм (концепт Кирилла Шилохвостова):
+      Для каждой строки i из CUTTING (строки 3..681):
+        1. Берём: min_gage_i, max_gage_i, min_len_i, max_len_i, gcsp_i
+        2. Загружаем generic-лист (LEAD PREP и т.д.)
+        3. Для каждой строки j в generic-листе, где QTY=0/None:
+              - Подставляем QTY=1
+              - Если в строке j нет своих min/max gage/len — подставляем из строки i CUTTING
+              - TOTAL = GCSP_j * QTY = GCSP_j * 1 = GCSP_j  (GCSP берём из листа)
+              - Записываем как обучающую точку
+        4. Строки j с уже заполненным QTY > 0 — берём как есть (реальные данные)
+
+    Признаки для каждой точки:
+        GCSP (из generic-листа), QTY=1,
+        min_gage, max_gage, min_len, max_len (из CUTTING если нет своих),
+        + производные фичи
+
+    Целевая переменная: TOTAL = GCSP * QTY
+
+    Возвращает DataFrame со всеми обучающими точками.
+    Размер: len(df_cutting) * len(zero_qty_rows_in_sheet) + real_rows
+    """
+    # 1. Загружаем generic-лист один раз
+    df_sheet, _ = load_sheet_dynamic(file_path, sheet_name)
+
+    if df_sheet.empty:
+        return pd.DataFrame()
+
+    # Разделяем на строки с реальными QTY и строки-"слоты" (QTY=0/None)
+    real_rows = df_sheet[df_sheet['TOTAL'] > 0].copy()
+    slot_rows = df_sheet[df_sheet['TOTAL'] <= 0].copy() if use_zero_qty_rows else pd.DataFrame()
+
+    augmented_records = []
+
+    # 2. Реальные строки идут в обучение без изменений (wire params неизвестны → 0)
+    for _, r in real_rows.iterrows():
+        augmented_records.append({
+            'GCSP':      r['GCSP'],
+            'QTY':       r['QTY'],
+            'TOTAL':     r['TOTAL'],
+            'CATEGORY':  r['CATEGORY'],
+            'min_gage':  0.0,
+            'max_gage':  0.0,
+            'min_len':   0.0,
+            'max_len':   0.0,
+            'source':    'real',
+        })
+
+    # 3. Для каждой строки i из CUTTING — активируем слоты с QTY=1
+    if not slot_rows.empty:
+        for _, cutting_row in df_cutting.iterrows():
+            c_min_gage = float(cutting_row['min_gage'])
+            c_max_gage = float(cutting_row['max_gage'])
+            c_min_len  = float(cutting_row['min_len'])
+            c_max_len  = float(cutting_row['max_len'])
+            # gcsp_cutting = cutting_row['gcsp']  # не используем напрямую
+
+            for _, slot in slot_rows.iterrows():
+                gcsp_j = float(slot['GCSP'])
+                total_j = gcsp_j * 1.0  # QTY = 1
+
+                augmented_records.append({
+                    'GCSP':      gcsp_j,
+                    'QTY':       1.0,
+                    'TOTAL':     total_j,
+                    'CATEGORY':  slot['CATEGORY'],
+                    'min_gage':  c_min_gage,
+                    'max_gage':  c_max_gage,
+                    'min_len':   c_min_len,
+                    'max_len':   c_max_len,
+                    'source':    'augmented',
+                })
+
+    if not augmented_records:
+        return pd.DataFrame()
+
+    df_aug = pd.DataFrame(augmented_records)
+    return df_aug
+
+
+def create_features_augmented(df):
+    """
+    Инжиниринг признаков для расширенного датасета.
+    Объединяет признаки generic-листа + wire-параметры из CUTTING.
+    """
+    df = df.copy()
+
+    # Стандартные признаки generic-листа
+    df['GCSP_log']        = np.log1p(df['GCSP'])
+    df['QTY_log']         = np.log1p(df['QTY'].clip(lower=0))
+    df['GCSP_x_QTY']      = df['GCSP'] * df['QTY']
+    df['GCSP_sqrt']       = np.sqrt(df['GCSP'].clip(lower=0))
+    df['QTY_sqrt']        = np.sqrt(df['QTY'].clip(lower=0))
+    df['CAT_LEN']         = df['CATEGORY'].astype(str).str.len().fillna(0)
+    df['CAT_DIGITS']      = df['CATEGORY'].astype(str).str.count(r'\d').fillna(0)
+    df['CAT_HAS_LETTERS'] = df['CATEGORY'].astype(str).str.contains(r'[A-Za-z]', na=False).astype(int)
+
+    # Wire-параметры из CUTTING
+    df['gage_range']    = df['max_gage'] - df['min_gage']
+    df['len_range']     = df['max_len']  - df['min_len']
+    df['mid_gage']      = (df['min_gage'] + df['max_gage']) / 2.0
+    df['mid_len']       = (df['min_len']  + df['max_len'])  / 2.0
+    df['min_gage_log']  = np.log1p(df['min_gage'].clip(lower=0))
+    df['max_gage_log']  = np.log1p(df['max_gage'].clip(lower=0))
+    df['min_len_log']   = np.log1p(df['min_len'].clip(lower=0))
+    df['max_len_log']   = np.log1p(df['max_len'].clip(lower=0))
+    df['mid_len_log']   = np.log1p(df['mid_len'].clip(lower=0))
+    df['mid_gage_log']  = np.log1p(df['mid_gage'].clip(lower=0))
+    df['max_gage_sqrt'] = np.sqrt(df['max_gage'].clip(lower=0))
+    df['max_len_sqrt']  = np.sqrt(df['max_len'].clip(lower=0))
+
+    return df
+
+
+# Расширенный список признаков (generic + wire из CUTTING)
+FEATURE_COLS_AUGMENTED = [
+    # Стандартные generic
+    'GCSP', 'QTY',
+    'GCSP_log', 'QTY_log',
+    'GCSP_x_QTY', 'GCSP_sqrt', 'QTY_sqrt',
+    'CAT_LEN', 'CAT_DIGITS', 'CAT_HAS_LETTERS',
+    # Wire-параметры из CUTTING
+    'min_gage', 'max_gage', 'min_len', 'max_len',
+    'gage_range', 'len_range', 'mid_gage', 'mid_len',
+    'min_gage_log', 'max_gage_log', 'min_len_log', 'max_len_log',
+    'mid_len_log', 'mid_gage_log',
+    'max_gage_sqrt', 'max_len_sqrt',
+]

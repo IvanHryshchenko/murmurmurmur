@@ -27,18 +27,22 @@ train.py — Обучение нейросети по концепту зака�
 import os
 import datetime
 import numpy as np
+import pandas as _pd
 
 from data_preparation import (
     GENERIC_SHEETS,
     FEATURE_COLS,
     FEATURE_COLS_TOTAL_GCSD,
     FEATURE_COLS_CUTTING,
+    FEATURE_COLS_AUGMENTED,
     load_cutting_sheet,
     create_cutting_features,
     load_sheet_dynamic,
     create_features,
     load_and_prepare_total_gcsd,
     create_features_total_gcsd,
+    build_augmented_dataset,
+    create_features_augmented,
 )
 from model import MiniAI, log
 
@@ -51,12 +55,13 @@ def safe_name(s):
     return s.replace(' ', '_').replace('/', '_').replace('\n', '_')
 
 
-def train_and_save(sheet_name, X, y, feature_cols, epochs=2000):
+def train_and_save(sheet_name, X, y, feature_cols, epochs=2000, sample_weight=None):
     model_dir = os.path.join(MODELS_DIR, safe_name(sheet_name))
     os.makedirs(model_dir, exist_ok=True)
 
-    ai = MiniAI(input_size=len(feature_cols), epochs=epochs, lr=0.001)
-    ai.fit(X, y, feature_cols, verbose=True)
+    ai = MiniAI(input_size=len(feature_cols), epochs=epochs, lr=0.001,
+                log_target=True, batch_size=2048, patience=300)
+    ai.fit(X, y, feature_cols, verbose=True, sample_weight=sample_weight)
     ai.save(os.path.join(model_dir, 'model.pkl'))
     log(f'  💾 Model saved → {model_dir}/model.pkl')
     return ai
@@ -224,41 +229,209 @@ else:
                         'status': '⚠️  skipped'})
 
 
-# ─── 3. GENERIC SHEETS ────────────────────────────────────────────────────────
+# ─── 3. GENERIC SHEETS (инкрементальное обучение по строкам CUTTING) ─────────
+#
+# Концепт Кирилла Шилохвостова — точное воспроизведение:
+#
+#   Для каждого generic-листа (LEAD PREP, FA и т.д.):
+#     1. Инициализируем модель — делаем первый fit() на реальных строках
+#        (QTY > 0) чтобы зафиксировать нормализацию.
+#        Если реальных строк нет — используем все строки с первой строкой CUTTING.
+#     2. Итерируемся по строкам CUTTING (строки 3..681):
+#        - Берём min_gage, max_gage, min_len, max_len из строки i
+#        - Подставляем в слоты листа (QTY=0/None строки), QTY=1
+#        - TOTAL = GCSP_слота × 1 = GCSP_слота
+#        - Вызываем partial_fit() — дообучаем модель на этих данных
+#          (веса НЕ сбрасываются, нормализация зафиксирована)
+#     3. После всех 600+ строк — финальная проверка pass/fail
+
+log()
+log('  ' + '=' * W)
+log('  Generic Sheets  (Incremental CUTTING-by-CUTTING Training)')
+log('  ' + '=' * W)
+log()
+log(f'  Строк CUTTING: {len(df_cutting)}')
+log('  Концепт: каждая строка CUTTING активирует слоты листа → partial_fit()')
+EPOCHS_PER_CUTTING_ROW = 500
+log(f'  Эпох на строку CUTTING: {EPOCHS_PER_CUTTING_ROW}')
+log()  # эпох на каждую строку CUTTING
 
 for sheet_name in GENERIC_SHEETS:
     log()
     log('  ' + '=' * W)
-    log(f'  Sheet: {sheet_name}')
+    log(f'  Sheet: {sheet_name}  (incremental)')
     log('  ' + '=' * W)
 
-    df, _ = load_sheet_dynamic(FILE_PATH, sheet_name)
-    df_train = df[df['TOTAL'] > 0].copy()
+    # Загружаем лист один раз
+    df_sheet, _ = load_sheet_dynamic(FILE_PATH, sheet_name)
+    real_rows = df_sheet[df_sheet['TOTAL'] > 0].copy()
+    slot_rows = df_sheet[df_sheet['TOTAL'] <= 0].copy()
 
-    log(f'  Строк всего: {len(df)}, с данными: {len(df_train)}')
+    log(f'  Реальных строк : {len(real_rows)}')
+    log(f'  Слотов (QTY=0) : {len(slot_rows)}')
+    log(f'  Строк CUTTING  : {len(df_cutting)}')
+    log(f'  Итого шагов    : {len(df_cutting)} строк × {len(slot_rows)} слотов × {EPOCHS_PER_CUTTING_ROW} эпох')
+    log()
 
-    if len(df_train) < MIN_SAMPLES:
-        log(f'  ⚠️  Недостаточно данных ({len(df_train)} строк), пропуск.')
-        all_results.append({'sheet': sheet_name, 'n': len(df_train),
+    if len(slot_rows) == 0 and len(real_rows) < MIN_SAMPLES:
+        log(f'  ⚠️  Нет данных, пропуск.')
+        all_results.append({'sheet': sheet_name, 'n': 0,
                             'mae': None, 'r2': None,
                             'pass_strict_pct': None, 'pass_5pct_pct': None,
                             'status': '⚠️  skipped'})
         continue
 
-    df_feat = create_features(df_train)
-    ai = train_and_save(
-        sheet_name,
-        df_feat[FEATURE_COLS].values,
-        df_feat['TOTAL'].values,
-        FEATURE_COLS,
-    )
-    m = ai.history['metrics_all']
-    preds = ai.predict(df_feat[FEATURE_COLS].values)
-    pf    = _pass_fail_report(df_feat['TOTAL'].values, preds,
-                              f'{sheet_name} check')
+    # ── Шаг 1: инициализация модели ──────────────────────────────────────────
+    # Строим init-датасет: реальные строки + первая строка CUTTING в слотах
+    # (только чтобы зафиксировать нормализацию на правдоподобных данных)
+
+    first_cut = df_cutting.iloc[0]
+    init_records = []
+
+    # Реальные строки
+    for _, r in real_rows.iterrows():
+        init_records.append({
+            'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
+            'CATEGORY': r['CATEGORY'],
+            'min_gage': 0.0, 'max_gage': 0.0, 'min_len': 0.0, 'max_len': 0.0,
+            'source': 'real',
+        })
+
+    # Слоты с первой строкой CUTTING
+    for _, slot in slot_rows.iterrows():
+        gcsp_j = float(slot['GCSP'])
+        init_records.append({
+            'GCSP': gcsp_j, 'QTY': 1.0, 'TOTAL': gcsp_j,
+            'CATEGORY': slot['CATEGORY'],
+            'min_gage': float(first_cut['min_gage']),
+            'max_gage': float(first_cut['max_gage']),
+            'min_len':  float(first_cut['min_len']),
+            'max_len':  float(first_cut['max_len']),
+            'source': 'augmented',
+        })
+
+    df_init = _pd.DataFrame(init_records)
+    if len(df_init) < MIN_SAMPLES:
+        log(f'  ⚠️  Недостаточно данных для инициализации, пропуск.')
+        all_results.append({'sheet': sheet_name, 'n': 0,
+                            'mae': None, 'r2': None,
+                            'pass_strict_pct': None, 'pass_5pct_pct': None,
+                            'status': '⚠️  skipped'})
+        continue
+
+    df_init_feat = create_features_augmented(df_init)
+    X_init = df_init_feat[FEATURE_COLS_AUGMENTED].values
+    y_init = df_init_feat['TOTAL'].values
+    sw_init = np.where(df_init_feat['source'] == 'real', 20.0, 1.0)
+
+    log('  Инициализация нормализации (первый fit)...')
+    model_dir = os.path.join(MODELS_DIR, safe_name(sheet_name))
+    os.makedirs(model_dir, exist_ok=True)
+
+    ai = MiniAI(input_size=len(FEATURE_COLS_AUGMENTED),
+                epochs=EPOCHS_PER_CUTTING_ROW, lr=0.001,
+                log_target=True, batch_size=512, patience=150)
+    ai.fit(X_init, y_init, FEATURE_COLS_AUGMENTED, verbose=False,
+           sample_weight=sw_init)
+    log(f'  Нормализация зафиксирована. Начинаем инкрементальное обучение...')
+    log()
+
+    # ── Шаг 2: итерация по строкам CUTTING ────────────────────────────────────
+    n_cut = len(df_cutting)
+    log_every = max(1, n_cut // 10)  # логируем каждые 10%
+
+    for cut_idx, (_, cut_row) in enumerate(df_cutting.iterrows()):
+        c_min_gage = float(cut_row['min_gage'])
+        c_max_gage = float(cut_row['max_gage'])
+        c_min_len  = float(cut_row['min_len'])
+        c_max_len  = float(cut_row['max_len'])
+
+        # Активируем слоты этой строкой CUTTING (QTY=1)
+        step_records = []
+        for _, slot in slot_rows.iterrows():
+            gcsp_j = float(slot['GCSP'])
+            step_records.append({
+                'GCSP': gcsp_j, 'QTY': 1.0, 'TOTAL': gcsp_j,
+                'CATEGORY': slot['CATEGORY'],
+                'min_gage': c_min_gage, 'max_gage': c_max_gage,
+                'min_len':  c_min_len,  'max_len':  c_max_len,
+                'source': 'augmented',
+            })
+
+        # Всегда добавляем реальные строки чтобы не забыть их
+        for _, r in real_rows.iterrows():
+            step_records.append({
+                'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
+                'CATEGORY': r['CATEGORY'],
+                'min_gage': 0.0, 'max_gage': 0.0, 'min_len': 0.0, 'max_len': 0.0,
+                'source': 'real',
+            })
+
+        df_step = _pd.DataFrame(step_records)
+        df_step_feat = create_features_augmented(df_step)
+        X_step = df_step_feat[FEATURE_COLS_AUGMENTED].values
+        y_step = df_step_feat['TOTAL'].values
+        sw_step = np.where(df_step_feat['source'] == 'real', 20.0, 1.0)
+
+        ai.partial_fit(X_step, y_step, epochs=EPOCHS_PER_CUTTING_ROW,
+                       sample_weight=sw_step, verbose=False)
+
+        if (cut_idx + 1) % log_every == 0 or cut_idx == n_cut - 1:
+            pct = (cut_idx + 1) / n_cut * 100
+            log(f'  [{pct:5.1f}%]  CUTTING строка {cut_idx+1}/{n_cut}'
+                f'  gage=[{c_min_gage:.1f}–{c_max_gage:.1f}]'
+                f'  len=[{c_min_len:.0f}–{c_max_len:.0f}]'
+                f'  t={ai.t} шагов Adam')
+
+    log()
+    log(f'  Инкрементальное обучение завершено. Всего шагов Adam: {ai.t}')
+
+    # ── Шаг 3: финальная оценка на всех данных ────────────────────────────────
+    ai.save(os.path.join(model_dir, 'model.pkl'))
+    log(f'  💾 Model saved → {model_dir}/model.pkl')
+
+    # Собираем полный датасет для оценки
+    all_records = []
+    for _, r in real_rows.iterrows():
+        all_records.append({
+            'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
+            'CATEGORY': r['CATEGORY'],
+            'min_gage': 0.0, 'max_gage': 0.0, 'min_len': 0.0, 'max_len': 0.0,
+            'source': 'real',
+        })
+    # Для оценки берём среднюю строку CUTTING как "типичный провод"
+    mid_cut = df_cutting.iloc[len(df_cutting)//2]
+    for _, slot in slot_rows.iterrows():
+        gcsp_j = float(slot['GCSP'])
+        all_records.append({
+            'GCSP': gcsp_j, 'QTY': 1.0, 'TOTAL': gcsp_j,
+            'CATEGORY': slot['CATEGORY'],
+            'min_gage': float(mid_cut['min_gage']),
+            'max_gage': float(mid_cut['max_gage']),
+            'min_len':  float(mid_cut['min_len']),
+            'max_len':  float(mid_cut['max_len']),
+            'source': 'augmented',
+        })
+
+    df_eval = _pd.DataFrame(all_records)
+    df_eval_feat = create_features_augmented(df_eval)
+    X_eval = df_eval_feat[FEATURE_COLS_AUGMENTED].values
+    y_eval = df_eval_feat['TOTAL'].values
+
+    preds = ai.predict(X_eval)
+    pf = _pass_fail_report(y_eval, preds, f'{sheet_name} final check')
+
+    # Метрики
+    err = preds - y_eval
+    mae = float(np.mean(np.abs(err)))
+    ss_r = float(np.sum(err**2))
+    ss_t = float(np.sum((y_eval - y_eval.mean())**2))
+    r2 = 1.0 - ss_r / (ss_t + 1e-10)
+
     all_results.append({
-        'sheet': sheet_name, 'n': len(df_train),
-        'mae': m['mae'], 'r2': m['r2'],
+        'sheet': sheet_name,
+        'n': len(df_cutting) * len(slot_rows) + len(real_rows),
+        'mae': mae, 'r2': r2,
         'pass_strict_pct': pf['pass_strict_pct'],
         'pass_5pct_pct': pf['pass_5pct_pct'],
         'status': '✅ trained',

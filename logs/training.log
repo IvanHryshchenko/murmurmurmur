@@ -1653,3 +1653,1793 @@
   📁  Лог: logs/training.log
   ══════════════════════════════════════════════════════════════════════
 
+
+  ══════════════════════════════════════════════════════════════════════
+                🚀  TRAINING SESSION (Wire-by-Wire Concept)              
+                      Started: 2026-06-02  11:43:45                     
+                            File: K0_old.xlsx                           
+  ══════════════════════════════════════════════════════════════════════
+
+  ======================================================================
+  Sheet: CUTTING  (Wire-by-Wire Training)
+  ======================================================================
+
+  Концепт: каждая строка I3..I681 — отдельный провод/операция.
+  Подставляем QTY=1, цель = Global Sec/Pc (время на шт).
+  Признаки: Min Gage, Max Gage, Min Length, Max Length.
+
+  Строк с валидными параметрами (GCSP > 0): 575
+  GCSP — mean=10.6258  std=16.9870  min=0.6100  max=129.3000
+
+  Пример активации строк (QTY=1):
+    Строка   3 | Gage [0.3–5.0] | Len [50–1000] | GCSP=1.2301 → TOTAL TIME = 1.2301 мин
+    Строка   4 | Gage [0.3–5.0] | Len [1001–1500] | GCSP=1.7051 → TOTAL TIME = 1.7051 мин
+    Строка   5 | Gage [0.3–5.0] | Len [1501–2000] | GCSP=2.2101 → TOTAL TIME = 2.2101 мин
+    Строка   6 | Gage [0.3–5.0] | Len [2001–2500] | GCSP=2.7451 → TOTAL TIME = 2.7451 мин
+    Строка   7 | Gage [0.3–5.0] | Len [2501–3000] | GCSP=3.3101 → TOTAL TIME = 3.3101 мин
+
+  Epoch  200/3000  │  Train MSE 0.611075  │  Val MSE 0.401308  │    0.2s elapsed
+  Epoch  400/3000  │  Train MSE 0.483100  │  Val MSE 0.406346  │    0.4s elapsed
+  Epoch  600/3000  │  Train MSE 0.521437  │  Val MSE 0.346401  │    0.6s elapsed
+  Epoch  800/3000  │  Train MSE 0.387670  │  Val MSE 0.257209  │    0.8s elapsed
+  Epoch 1000/3000  │  Train MSE 0.290387  │  Val MSE 0.152520  │    1.0s elapsed
+  Epoch 1200/3000  │  Train MSE 0.313602  │  Val MSE 0.118209  │    1.1s elapsed
+  Epoch 1400/3000  │  Train MSE 0.253392  │  Val MSE 0.114146  │    1.3s elapsed
+  Epoch 1600/3000  │  Train MSE 0.257109  │  Val MSE 0.107879  │    1.5s elapsed
+  Epoch 1800/3000  │  Train MSE 0.243547  │  Val MSE 0.113690  │    1.7s elapsed
+  Epoch 2000/3000  │  Train MSE 0.257592  │  Val MSE 0.116703  │    1.9s elapsed
+  Epoch 2200/3000  │  Train MSE 0.212743  │  Val MSE 0.110845  │    2.1s elapsed
+  Epoch 2400/3000  │  Train MSE 0.180549  │  Val MSE 0.105381  │    2.3s elapsed
+  Epoch 2600/3000  │  Train MSE 0.268434  │  Val MSE 0.114814  │    2.5s elapsed
+  Epoch 2800/3000  │  Train MSE 0.195484  │  Val MSE 0.119464  │    2.7s elapsed
+  Epoch 3000/3000  │  Train MSE 0.183261  │  Val MSE 0.099469  │    2.9s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   2.97573 ┤
+           │                                                       T V 
+           │       V   T                                               
+           │       V   T                                               
+           │       V  T                                                
+           │      V   T                                                
+           │      V T                                                  
+           │      V T                                                  
+           │     V   T                                                 
+           │     ✪                                                     
+           │    V    T                                                 
+           │   V   T                                                   
+           │  V  T                                                     
+           │ V    T                                                    
+           │ V   T                                                     
+           │ V   T                                                     
+           │ V   T                                                     
+           │ V   T                                                     
+           │ V   T                                                     
+           │ V  T                                                      
+           │ V T                                                       
+           │ V T                                                       
+           │ V T                                                       
+           │ V  T                                                      
+           │ V T                                                       
+           │ V T                                                       
+           │ V  T                                                      
+           │ V T                                                       
+           │ V  T                                                      
+           │ VT                                                        
+           │ V   T                                                     
+           │ V T                                                       
+           │ V T                                                       
+           │ V  T                                                      
+           │ V T                                                       
+           │ V  T                                                      
+           │ VT                                                        
+   0.09947 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  11:43:48                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    19          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                    2.9  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                    575          │
+  │  Training samples                                 460          │
+  │  Validation samples                               115          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          2.839875          │
+  │  Final    train MSE                          0.183261          │
+  │  Initial  val   MSE                          2.975734          │
+  │  Final    val   MSE                          0.099469          │
+  │  Best     val   MSE                          0.092787          │
+  │  Best epoch                                      2861          │
+  │  Train loss reduction                            93.5  %       │
+  │  Overfit index (val-tr)/tr                      -45.7  %       │
+  ├─  Metrics — Train  (n=460, denormalised values)  ─────────────────┤
+  │  MAE   (mean abs error)                        3.0162  min     │
+  │  RMSE  (root mean sq error)                    6.9226  min     │
+  │  Median abs error                              1.4296  min     │
+  │  P95   abs error                              11.3333  min     │
+  │  MAPE  (mean abs % error)                       54.62  %       │
+  │  R²                            0.8459   ████████████████          │
+  ├─  Metrics — Val    (n=115, denormalised values)  ─────────────────┤
+  │  MAE   (mean abs error)                        2.6437  min     │
+  │  RMSE  (root mean sq error)                    5.3575  min     │
+  │  Median abs error                              1.4632  min     │
+  │  P95   abs error                              12.3703  min     │
+  │  MAPE  (mean abs % error)                       58.31  %       │
+  │  R²                            0.8533   █████████████████          │
+  ├─  Metrics — Full   (n=575, denormalised values)  ─────────────────┤
+  │  MAE   (mean abs error)                        2.9417  min     │
+  │  RMSE  (root mean sq error)                    6.6392  min     │
+  │  Median abs error                              1.4350  min     │
+  │  P95   abs error                              11.4373  min     │
+  │  MAPE  (mean abs % error)                       55.36  %       │
+  │  R²                            0.8472   ████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. min_gage_log               ███████████████████████   100.0%  0.3095  │
+  │   2. len_range                  ██████████████████████     95.3%  0.2949  │
+  │   3. max_gage_sqrt              ██████████████████████     95.1%  0.2944  │
+  │   4. gage_x_maxlen              ██████████████████████     93.6%  0.2896  │
+  │   5. max_len                    ██████████████████████     91.9%  0.2845  │
+  │   6. min_len                    █████████████████████      87.7%  0.2714  │
+  │   7. max_gage_log               ████████████████████       87.3%  0.2701  │
+  │   8. min_len_log                ████████████████████       86.7%  0.2683  │
+  │   9. max_len_log                ████████████████████       84.7%  0.2623  │
+  │  10. gage_range                 ████████████████████       84.1%  0.2604  │
+  │  11. mid_gage_log               ███████████████████        82.6%  0.2557  │
+  │  12. mid_len                    ███████████████████        81.8%  0.2531  │
+  │  13. mid_gage                   ███████████████████        80.5%  0.2492  │
+  │  14. mid_len_log                ███████████████████        79.3%  0.2453  │
+  │  15. gage_x_len                 ██████████████████         77.3%  0.2393  │
+  │  16. max_gage                   ██████████████████         77.0%  0.2382  │
+  │  17. mid_len_sqrt               ██████████████████         76.7%  0.2374  │
+  │  18. max_len_sqrt               ████████████████           69.5%  0.2150  │
+  │  19. min_gage                   ████████████████           67.7%  0.2094  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\CUTTING/model.pkl
+  ── CUTTING wire-by-wire check ──
+  Total rows          : 575
+  Passed (pred ≤ ref) :  238  (41.4%)
+  Passed (pred ≤ +5%) :  280  (48.7%)
+  Match (±2%)         :   31  (5.4%)
+  Failed              :  337  (58.6%)
+  Top-5 worst (over-predictions):
+    row_local=508  ref=38.2000  pred=67.1548  diff=+28.9548  (+75.8%)
+    row_local=507  ref=30.4500  pred=48.4760  diff=+18.0260  (+59.2%)
+    row_local=486  ref=49.3400  pred=67.1548  diff=+17.8148  (+36.1%)
+    row_local= 90  ref=2.0224  pred=18.6140  diff=+16.5916  (+820.4%)
+    row_local=105  ref=2.1724  pred=18.6140  diff=+16.4416  (+756.8%)
+
+  ======================================================================
+  Sheet: TOTAL values GCSD
+  ======================================================================
+  Всего строк: 14
+  Для обучения (с меткой): 14
+  Без метки (для предсказания): 0
+  Epoch  200/2000  │  Train MSE 0.156530  │  Val MSE 0.015117  │    0.0s elapsed
+  Epoch  400/2000  │  Train MSE 0.103173  │  Val MSE 0.008050  │    0.1s elapsed
+  Epoch  600/2000  │  Train MSE 0.085683  │  Val MSE 0.015938  │    0.1s elapsed
+  Epoch  800/2000  │  Train MSE 0.032214  │  Val MSE 0.014893  │    0.2s elapsed
+  Epoch 1000/2000  │  Train MSE 0.091248  │  Val MSE 0.007749  │    0.2s elapsed
+  Epoch 1200/2000  │  Train MSE 0.031498  │  Val MSE 0.010717  │    0.3s elapsed
+  Epoch 1400/2000  │  Train MSE 0.099828  │  Val MSE 0.012939  │    0.3s elapsed
+  Epoch 1600/2000  │  Train MSE 0.018949  │  Val MSE 0.006978  │    0.3s elapsed
+  Epoch 1800/2000  │  Train MSE 0.008342  │  Val MSE 0.010353  │    0.4s elapsed
+  Epoch 2000/2000  │  Train MSE 0.027832  │  Val MSE 0.008724  │    0.4s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   1.78906 ┤
+           │                                               V         T 
+           │ V    T                                                    
+           │ V   T                                                     
+           │ VT                                                        
+           │ V T                                                       
+           │ V     T                                                   
+           │ V    T                                                    
+           │ V  T                                                      
+           │ VT                                                        
+           │ V  T                                                      
+           │ V T                                                       
+           │ V   T                                                     
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ VT                                                        
+           │ V T                                                       
+           │ V T                                                       
+           │ ✪                                                         
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ V   T                                                     
+           │ VT                                                        
+           │ ✪                                                         
+           │ V   T                                                     
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ V T                                                       
+           │ V T                                                       
+           │ ✪                                                         
+   0.00652 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  11:43:48                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    10          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                    0.4  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                     14          │
+  │  Training samples                                  12          │
+  │  Validation samples                                 2          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          1.789059          │
+  │  Final    train MSE                          0.027832          │
+  │  Initial  val   MSE                          1.458484          │
+  │  Final    val   MSE                          0.008724          │
+  │  Best     val   MSE                          0.002773          │
+  │  Best epoch                                       380          │
+  │  Train loss reduction                            98.4  %       │
+  │  Overfit index (val-tr)/tr                      -68.7  %       │
+  ├─  Metrics — Train  (n=12, denormalised values)  ──────────────────┤
+  │  MAE   (mean abs error)                        4.1547  min     │
+  │  RMSE  (root mean sq error)                    6.0319  min     │
+  │  Median abs error                              2.1716  min     │
+  │  P95   abs error                              11.8172  min     │
+  │  MAPE  (mean abs % error)                      148.25  %       │
+  │  R²                            0.9432   ██████████████████          │
+  ├─  Metrics — Val    (n=2, denormalised values)  ───────────────────┤
+  │  MAE   (mean abs error)                        2.2449  min     │
+  │  RMSE  (root mean sq error)                    2.2461  min     │
+  │  Median abs error                              2.2449  min     │
+  │  P95   abs error                               2.3109  min     │
+  │  MAPE  (mean abs % error)                      375.04  %       │
+  │  R²                            0.9502   ███████████████████          │
+  ├─  Metrics — Full   (n=14, denormalised values)  ──────────────────┤
+  │  MAE   (mean abs error)                        3.8819  min     │
+  │  RMSE  (root mean sq error)                    5.6486  min     │
+  │  Median abs error                              2.1716  min     │
+  │  P95   abs error                              11.8172  min     │
+  │  MAPE  (mean abs % error)                      180.65  %       │
+  │  R²                            0.9448   ██████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. PART_HAS_LETTER            ███████████████████████   100.0%  0.4029  │
+  │   2. GCSD_sqrt                  ██████████████████████     93.6%  0.3773  │
+  │   3. ADJ_log                    ██████████████████████     92.2%  0.3713  │
+  │   4. GCSD_log                   ██████████████████████     92.1%  0.3711  │
+  │   5. PART_LEN                   █████████████████████      90.2%  0.3632  │
+  │   6. ADJ_sqrt                   ███████████████████        82.6%  0.3327  │
+  │   7. GCSD_x_ADJ                 ██████████████████         77.8%  0.3136  │
+  │   8. PART_DIGITS                █████████████████          74.7%  0.3012  │
+  │   9. ADJ.                       █████████████████          72.8%  0.2932  │
+  │  10. GCSD                       █████████████████          72.4%  0.2916  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\TOTAL_values_GCSD/model.pkl
+  ── TOTAL values GCSD check ──
+  Total rows          : 14
+  Passed (pred ≤ ref) :    5  (35.7%)
+  Passed (pred ≤ +5%) :    5  (35.7%)
+  Match (±2%)         :    0  (0.0%)
+  Failed              :    9  (64.3%)
+  Top-5 worst (over-predictions):
+    row_local= 13  ref=3.1518  pred=5.5522  diff=+2.4004  (+76.2%)
+    row_local=  4  ref=3.1518  pred=5.5522  diff=+2.4004  (+76.2%)
+    row_local=  6  ref=20.4169  pred=22.7351  diff=+2.3182  (+11.4%)
+    row_local=  7  ref=0.2940  pred=2.4656  diff=+2.1716  (+738.7%)
+    row_local=  5  ref=0.2940  pred=2.4656  diff=+2.1716  (+738.7%)
+
+  ======================================================================
+  Generic Sheets  (Cross-CUTTING Augmented Training)
+  ======================================================================
+
+  Строк CUTTING для аугментации: 575
+  Для каждого листа: слоты (QTY=0) × строки CUTTING = обучающие точки
+
+
+  ──────────────────────────────────────────────────────────────────────
+  Sheet: LEAD PREP
+  ──────────────────────────────────────────────────────────────────────
+  Реальных строк  : 23
+  Аугментированных: 75900  (575 CUTTING × 132 слотов)
+  Итого точек     : 75923
+  TOTAL — mean=20.2093  std=29.2588  min=0.0100  max=225.0000
+
+  Epoch  200/2000  │  Train MSE 0.149961  │  Val MSE 0.043990  │   35.3s elapsed
+  Epoch  400/2000  │  Train MSE 0.100411  │  Val MSE 0.037834  │   69.1s elapsed
+  Epoch  600/2000  │  Train MSE 0.076264  │  Val MSE 0.034180  │  102.3s elapsed
+  Epoch  800/2000  │  Train MSE 0.064278  │  Val MSE 0.032923  │  135.5s elapsed
+  Epoch 1000/2000  │  Train MSE 0.057629  │  Val MSE 0.033941  │  168.6s elapsed
+  Epoch 1200/2000  │  Train MSE 0.054045  │  Val MSE 0.039439  │  202.0s elapsed
+  Epoch 1400/2000  │  Train MSE 0.045439  │  Val MSE 0.047936  │  235.2s elapsed
+  Epoch 1600/2000  │  Train MSE 0.041743  │  Val MSE 0.053539  │  268.4s elapsed
+  Epoch 1800/2000  │  Train MSE 0.039738  │  Val MSE 0.051085  │  302.1s elapsed
+  Epoch 2000/2000  │  Train MSE 0.038032  │  Val MSE 0.053140  │  335.8s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   4.93623 ┤
+           │                                       V                 T 
+           │ V  T                                                      
+           │ V T                                                       
+           │ VT                                                        
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+   0.02938 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  11:49:26                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    26          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                  335.8  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                  75923          │
+  │  Training samples                               60739          │
+  │  Validation samples                             15184          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          4.936226          │
+  │  Final    train MSE                          0.038032          │
+  │  Initial  val   MSE                          3.381775          │
+  │  Final    val   MSE                          0.053140          │
+  │  Best     val   MSE                          0.027963          │
+  │  Best epoch                                       735          │
+  │  Train loss reduction                            99.2  %       │
+  │  Overfit index (val-tr)/tr                      +39.7  %       │
+  ├─  Metrics — Train  (n=60739, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        3.0206  min     │
+  │  RMSE  (root mean sq error)                    6.5109  min     │
+  │  Median abs error                              1.5794  min     │
+  │  P95   abs error                              10.8727  min     │
+  │  MAPE  (mean abs % error)                      297.17  %       │
+  │  R²                            0.9498   ██████████████████          │
+  ├─  Metrics — Val    (n=15184, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        3.0825  min     │
+  │  RMSE  (root mean sq error)                    6.7448  min     │
+  │  Median abs error                              1.5875  min     │
+  │  P95   abs error                              10.9106  min     │
+  │  MAPE  (mean abs % error)                      311.11  %       │
+  │  R²                            0.9498   ██████████████████          │
+  ├─  Metrics — Full   (n=75923, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        3.0330  min     │
+  │  RMSE  (root mean sq error)                    6.5584  min     │
+  │  Median abs error                              1.5804  min     │
+  │  P95   abs error                              10.8727  min     │
+  │  MAPE  (mean abs % error)                      299.96  %       │
+  │  R²                            0.9498   ██████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. GCSP_sqrt                  ███████████████████████   100.0%  0.2622  │
+  │   2. GCSP_x_QTY                 ██████████████████████     94.7%  0.2484  │
+  │   3. GCSP_log                   ██████████████████████     92.8%  0.2434  │
+  │   4. mid_gage_log               █████████████████████      89.6%  0.2349  │
+  │   5. QTY_log                    █████████████████████      88.0%  0.2306  │
+  │   6. GCSP                       ████████████████████       86.6%  0.2271  │
+  │   7. max_gage                   ████████████████████       85.5%  0.2243  │
+  │   8. mid_len_log                ████████████████████       83.9%  0.2200  │
+  │   9. max_len_sqrt               ████████████████████       83.8%  0.2198  │
+  │  10. max_len_log                ███████████████████        82.7%  0.2168  │
+  │  11. min_len_log                ███████████████████        81.5%  0.2137  │
+  │  12. gage_range                 ███████████████████        80.1%  0.2100  │
+  │  13. min_gage_log               ███████████████████        79.9%  0.2094  │
+  │  14. QTY_sqrt                   ██████████████████         78.2%  0.2049  │
+  │  15. min_len                    ██████████████████         78.0%  0.2046  │
+  │  16. max_gage_sqrt              ██████████████████         77.8%  0.2038  │
+  │  17. mid_gage                   ██████████████████         77.4%  0.2030  │
+  │  18. max_gage_log               ██████████████████         75.8%  0.1987  │
+  │  19. CAT_LEN                    █████████████████          73.7%  0.1932  │
+  │  20. CAT_HAS_LETTERS            █████████████████          73.5%  0.1927  │
+  │  21. min_gage                   █████████████████          73.2%  0.1919  │
+  │  22. mid_len                    ████████████████           70.0%  0.1834  │
+  │  23. max_len                    ████████████████           69.3%  0.1817  │
+  │  24. QTY                        ████████████████           67.2%  0.1763  │
+  │  25. len_range                  ███████████████            64.3%  0.1687  │
+  │  26. CAT_DIGITS                 ██████████████             61.5%  0.1612  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\LEAD_PREP/model.pkl
+  ── LEAD PREP check ──
+  Total rows          : 75923
+  Passed (pred ≤ ref) : 40192  (52.9%)
+  Passed (pred ≤ +5%) : 45441  (59.9%)
+  Match (±2%)         : 6690  (8.8%)
+  Failed              : 35731  (47.1%)
+  Top-5 worst (over-predictions):
+    row_local=  3  ref=24.0000  pred=49.8614  diff=+25.8614  (+107.8%)
+    row_local= 13  ref=4.4600  pred=22.2254  diff=+17.7654  (+398.3%)
+    row_local= 15  ref=5.0000  pred=22.4675  diff=+17.4675  (+349.4%)
+    row_local=  9  ref=6.2000  pred=23.2092  diff=+17.0092  (+274.3%)
+    row_local= 16  ref=45.9600  pred=61.2265  diff=+15.2665  (+33.2%)
+
+  ──────────────────────────────────────────────────────────────────────
+  Sheet: LEAD PREP FA
+  ──────────────────────────────────────────────────────────────────────
+  Реальных строк  : 1
+  Аугментированных: 131100  (575 CUTTING × 228 слотов)
+  Итого точек     : 131101
+  TOTAL — mean=19.8539  std=33.3660  min=0.0100  max=319.5800
+
+  Epoch  200/2000  │  Train MSE 0.151411  │  Val MSE 0.040484  │   71.6s elapsed
+  Epoch  400/2000  │  Train MSE 0.096145  │  Val MSE 0.030049  │  132.7s elapsed
+  Epoch  600/2000  │  Train MSE 0.075040  │  Val MSE 0.042691  │  193.8s elapsed
+  Epoch  800/2000  │  Train MSE 0.057239  │  Val MSE 0.048544  │  254.9s elapsed
+  Epoch 1000/2000  │  Train MSE 0.051955  │  Val MSE 0.056949  │  315.9s elapsed
+  Epoch 1200/2000  │  Train MSE 0.051415  │  Val MSE 0.051977  │  376.9s elapsed
+  Epoch 1400/2000  │  Train MSE 0.044592  │  Val MSE 0.056443  │  437.4s elapsed
+  Epoch 1600/2000  │  Train MSE 0.042331  │  Val MSE 0.052414  │  498.0s elapsed
+  Epoch 1800/2000  │  Train MSE 0.038303  │  Val MSE 0.063137  │  558.6s elapsed
+  Epoch 2000/2000  │  Train MSE 0.034597  │  Val MSE 0.058116  │  619.0s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   4.77558 ┤
+           │                                      V                  T 
+           │ V  T                                                      
+           │ V T                                                       
+           │ VT                                                        
+           │ VT                                                        
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+   0.02648 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  11:59:47                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    26          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                  619.0  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                 131101          │
+  │  Training samples                              104881          │
+  │  Validation samples                             26220          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          4.775583          │
+  │  Final    train MSE                          0.034597          │
+  │  Initial  val   MSE                          3.149168          │
+  │  Final    val   MSE                          0.058116          │
+  │  Best     val   MSE                          0.026375          │
+  │  Best epoch                                       435          │
+  │  Train loss reduction                            99.3  %       │
+  │  Overfit index (val-tr)/tr                      +68.0  %       │
+  ├─  Metrics — Train  (n=104881, denormalised values)  ──────────────┤
+  │  MAE   (mean abs error)                        3.4293  min     │
+  │  RMSE  (root mean sq error)                    8.2190  min     │
+  │  Median abs error                              1.7272  min     │
+  │  P95   abs error                              11.7846  min     │
+  │  MAPE  (mean abs % error)                      106.31  %       │
+  │  R²                            0.9399   ██████████████████          │
+  ├─  Metrics — Val    (n=26220, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        3.3696  min     │
+  │  RMSE  (root mean sq error)                    8.0437  min     │
+  │  Median abs error                              1.7141  min     │
+  │  P95   abs error                              11.6807  min     │
+  │  MAPE  (mean abs % error)                       96.87  %       │
+  │  R²                            0.9398   ██████████████████          │
+  ├─  Metrics — Full   (n=131101, denormalised values)  ──────────────┤
+  │  MAE   (mean abs error)                        3.4174  min     │
+  │  RMSE  (root mean sq error)                    8.1843  min     │
+  │  Median abs error                              1.7256  min     │
+  │  P95   abs error                              11.7552  min     │
+  │  MAPE  (mean abs % error)                      104.42  %       │
+  │  R²                            0.9398   ██████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. GCSP_sqrt                  ███████████████████████   100.0%  0.2605  │
+  │   2. GCSP_x_QTY                 ██████████████████████     94.9%  0.2471  │
+  │   3. GCSP_log                   ██████████████████████     92.7%  0.2414  │
+  │   4. QTY_log                    █████████████████████      90.8%  0.2365  │
+  │   5. mid_gage_log               █████████████████████      90.2%  0.2349  │
+  │   6. max_gage                   ████████████████████       85.4%  0.2224  │
+  │   7. GCSP                       ████████████████████       84.3%  0.2197  │
+  │   8. mid_len_log                ████████████████████       84.2%  0.2194  │
+  │   9. max_len_log                ████████████████████       83.8%  0.2182  │
+  │  10. max_len_sqrt               ████████████████████       83.8%  0.2182  │
+  │  11. min_len_log                ███████████████████        82.2%  0.2141  │
+  │  12. gage_range                 ███████████████████        80.3%  0.2091  │
+  │  13. min_gage_log               ███████████████████        79.9%  0.2081  │
+  │  14. QTY_sqrt                   ███████████████████        79.6%  0.2074  │
+  │  15. max_gage_sqrt              ██████████████████         77.6%  0.2022  │
+  │  16. mid_gage                   ██████████████████         77.6%  0.2022  │
+  │  17. min_len                    ██████████████████         77.4%  0.2015  │
+  │  18. max_gage_log               █████████████████          74.2%  0.1934  │
+  │  19. min_gage                   █████████████████          73.5%  0.1914  │
+  │  20. CAT_LEN                    █████████████████          71.3%  0.1857  │
+  │  21. max_len                    ████████████████           70.7%  0.1841  │
+  │  22. mid_len                    ████████████████           70.3%  0.1832  │
+  │  23. CAT_HAS_LETTERS            ████████████████           70.0%  0.1823  │
+  │  24. len_range                  ████████████████           67.2%  0.1751  │
+  │  25. QTY                        ████████████████           67.1%  0.1748  │
+  │  26. CAT_DIGITS                 █████████████              57.3%  0.1493  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\LEAD_PREP_FA/model.pkl
+  ── LEAD PREP FA check ──
+  Total rows          : 131101
+  Passed (pred ≤ ref) : 64309  (49.1%)
+  Passed (pred ≤ +5%) : 72859  (55.6%)
+  Match (±2%)         : 8919  (6.8%)
+  Failed              : 66792  (50.9%)
+  Top-5 worst (over-predictions):
+    row_local=18997  ref=0.8000  pred=9.2565  diff=+8.4565  (+1057.1%)
+    row_local=16717  ref=0.8000  pred=8.8232  diff=+8.0232  (+1002.9%)
+    row_local=14437  ref=0.8000  pred=8.6211  diff=+7.8211  (+977.6%)
+    row_local=19098  ref=0.4000  pred=8.0575  diff=+7.6575  (+1914.4%)
+    row_local=18939  ref=3.7300  pred=11.2370  diff=+7.5070  (+201.3%)
+
+  ──────────────────────────────────────────────────────────────────────
+  Sheet: High Voltage
+  ──────────────────────────────────────────────────────────────────────
+  Реальных строк  : 0
+  Аугментированных: 37950  (575 CUTTING × 66 слотов)
+  Итого точек     : 37950
+  TOTAL — mean=22.3238  std=24.3935  min=0.1500  max=127.0000
+
+  Epoch  200/2000  │  Train MSE 0.121848  │  Val MSE 0.043925  │   18.6s elapsed
+  Epoch  400/2000  │  Train MSE 0.074630  │  Val MSE 0.038426  │   37.1s elapsed
+  Epoch  600/2000  │  Train MSE 0.063268  │  Val MSE 0.035841  │   55.6s elapsed
+  Epoch  800/2000  │  Train MSE 0.054357  │  Val MSE 0.033216  │   74.0s elapsed
+  Epoch 1000/2000  │  Train MSE 0.049580  │  Val MSE 0.034930  │   92.4s elapsed
+  Epoch 1200/2000  │  Train MSE 0.045855  │  Val MSE 0.036631  │  110.8s elapsed
+  Epoch 1400/2000  │  Train MSE 0.043754  │  Val MSE 0.041369  │  129.3s elapsed
+  Epoch 1600/2000  │  Train MSE 0.040884  │  Val MSE 0.038878  │  147.8s elapsed
+  Epoch 1800/2000  │  Train MSE 0.039528  │  Val MSE 0.040680  │  166.2s elapsed
+  Epoch 2000/2000  │  Train MSE 0.036360  │  Val MSE 0.044803  │  184.7s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   4.63407 ┤
+           │                                     V                   T 
+           │  V T                                                      
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+   0.03298 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  12:02:53                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    26          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                  184.7  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                  37950          │
+  │  Training samples                               30360          │
+  │  Validation samples                              7590          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          4.634068          │
+  │  Final    train MSE                          0.036360          │
+  │  Initial  val   MSE                          2.988394          │
+  │  Final    val   MSE                          0.044803          │
+  │  Best     val   MSE                          0.031294          │
+  │  Best epoch                                       859          │
+  │  Train loss reduction                            99.2  %       │
+  │  Overfit index (val-tr)/tr                      +23.2  %       │
+  ├─  Metrics — Train  (n=30360, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        2.8230  min     │
+  │  RMSE  (root mean sq error)                    5.1901  min     │
+  │  Median abs error                              1.4066  min     │
+  │  P95   abs error                              13.3662  min     │
+  │  MAPE  (mean abs % error)                       61.75  %       │
+  │  R²                            0.9548   ███████████████████          │
+  ├─  Metrics — Val    (n=7590, denormalised values)  ────────────────┤
+  │  MAE   (mean abs error)                        2.8466  min     │
+  │  RMSE  (root mean sq error)                    5.1633  min     │
+  │  Median abs error                              1.4046  min     │
+  │  P95   abs error                              13.4594  min     │
+  │  MAPE  (mean abs % error)                       60.14  %       │
+  │  R²                            0.9551   ███████████████████          │
+  ├─  Metrics — Full   (n=37950, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        2.8277  min     │
+  │  RMSE  (root mean sq error)                    5.1848  min     │
+  │  Median abs error                              1.4062  min     │
+  │  P95   abs error                              13.3662  min     │
+  │  MAPE  (mean abs % error)                       61.43  %       │
+  │  R²                            0.9548   ███████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. GCSP_sqrt                  ███████████████████████   100.0%  0.2705  │
+  │   2. GCSP_x_QTY                 ██████████████████████     93.1%  0.2518  │
+  │   3. CAT_HAS_LETTERS            ██████████████████████     92.4%  0.2499  │
+  │   4. GCSP_log                   █████████████████████      91.2%  0.2468  │
+  │   5. QTY_log                    █████████████████████      88.5%  0.2394  │
+  │   6. mid_gage_log               ████████████████████       87.2%  0.2359  │
+  │   7. GCSP                       ████████████████████       84.0%  0.2272  │
+  │   8. min_len_log                ███████████████████        82.7%  0.2239  │
+  │   9. mid_len_log                ███████████████████        81.9%  0.2216  │
+  │  10. max_len_log                ███████████████████        81.7%  0.2210  │
+  │  11. max_len_sqrt               ███████████████████        81.5%  0.2205  │
+  │  12. max_gage                   ███████████████████        80.4%  0.2176  │
+  │  13. QTY_sqrt                   ██████████████████         78.9%  0.2134  │
+  │  14. min_gage_log               ██████████████████         76.6%  0.2072  │
+  │  15. max_gage_log               ██████████████████         75.8%  0.2051  │
+  │  16. gage_range                 ██████████████████         75.8%  0.2051  │
+  │  17. max_gage_sqrt              ██████████████████         75.1%  0.2033  │
+  │  18. mid_gage                   █████████████████          74.2%  0.2009  │
+  │  19. min_len                    █████████████████          73.8%  0.1998  │
+  │  20. min_gage                   █████████████████          72.9%  0.1973  │
+  │  21. max_len                    ████████████████           68.3%  0.1848  │
+  │  22. QTY                        ████████████████           67.8%  0.1834  │
+  │  23. mid_len                    ████████████████           67.5%  0.1825  │
+  │  24. CAT_DIGITS                 ██████████████             61.4%  0.1662  │
+  │  25. CAT_LEN                    ██████████████             61.0%  0.1651  │
+  │  26. len_range                  █████████████              56.2%  0.1520  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\High_Voltage/model.pkl
+  ── High Voltage check ──
+  Total rows          : 37950
+  Passed (pred ≤ ref) : 17889  (47.1%)
+  Passed (pred ≤ +5%) : 22676  (59.8%)
+  Match (±2%)         : 5374  (14.2%)
+  Failed              : 20061  (52.9%)
+  Top-5 worst (over-predictions):
+    row_local=34775  ref=4.0000  pred=8.9285  diff=+4.9285  (+123.2%)
+    row_local=34778  ref=0.5000  pred=5.3615  diff=+4.8615  (+972.3%)
+    row_local=34781  ref=4.0000  pred=8.8527  diff=+4.8527  (+121.3%)
+    row_local=34716  ref=4.5300  pred=9.1220  diff=+4.5920  (+101.4%)
+    row_local=34774  ref=0.2600  pred=4.7967  diff=+4.5367  (+1744.9%)
+
+  ──────────────────────────────────────────────────────────────────────
+  Sheet: FA Conns and wires
+  ──────────────────────────────────────────────────────────────────────
+  Реальных строк  : 16
+  Аугментированных: 43125  (575 CUTTING × 75 слотов)
+  Итого точек     : 43141
+  TOTAL — mean=16.2826  std=12.9287  min=0.1117  max=356.0000
+
+  Epoch  200/2000  │  Train MSE 0.156718  │  Val MSE 0.056670  │   21.0s elapsed
+  Epoch  400/2000  │  Train MSE 0.100634  │  Val MSE 0.041345  │   42.0s elapsed
+  Epoch  600/2000  │  Train MSE 0.089007  │  Val MSE 0.034883  │   63.0s elapsed
+  Epoch  800/2000  │  Train MSE 0.068623  │  Val MSE 0.038048  │   84.1s elapsed
+  Epoch 1000/2000  │  Train MSE 0.059724  │  Val MSE 0.034527  │  104.9s elapsed
+  Epoch 1200/2000  │  Train MSE 0.052966  │  Val MSE 0.043231  │  125.9s elapsed
+  Epoch 1400/2000  │  Train MSE 0.051170  │  Val MSE 0.047966  │  146.8s elapsed
+  Epoch 1600/2000  │  Train MSE 0.046600  │  Val MSE 0.050119  │  167.7s elapsed
+  Epoch 1800/2000  │  Train MSE 0.048733  │  Val MSE 0.045455  │  188.7s elapsed
+  Epoch 2000/2000  │  Train MSE 0.043209  │  Val MSE 0.048216  │  209.7s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   5.33579 ┤
+           │                                        V                T 
+           │  V T                                                      
+           │ V T                                                       
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+   0.03511 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  12:06:24                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    26          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                  209.7  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                  43141          │
+  │  Training samples                               34513          │
+  │  Validation samples                              8628          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          5.335791          │
+  │  Final    train MSE                          0.043209          │
+  │  Initial  val   MSE                          3.703279          │
+  │  Final    val   MSE                          0.048216          │
+  │  Best     val   MSE                          0.032583          │
+  │  Best epoch                                       695          │
+  │  Train loss reduction                            99.2  %       │
+  │  Overfit index (val-tr)/tr                      +11.6  %       │
+  ├─  Metrics — Train  (n=34513, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        1.9144  min     │
+  │  RMSE  (root mean sq error)                    2.8078  min     │
+  │  Median abs error                              1.5466  min     │
+  │  P95   abs error                               5.1976  min     │
+  │  MAPE  (mean abs % error)                       76.67  %       │
+  │  R²                            0.9528   ███████████████████          │
+  ├─  Metrics — Val    (n=8628, denormalised values)  ────────────────┤
+  │  MAE   (mean abs error)                        1.9523  min     │
+  │  RMSE  (root mean sq error)                    2.8389  min     │
+  │  Median abs error                              1.5506  min     │
+  │  P95   abs error                               5.2849  min     │
+  │  MAPE  (mean abs % error)                       75.49  %       │
+  │  R²                            0.9520   ███████████████████          │
+  ├─  Metrics — Full   (n=43141, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        1.9220  min     │
+  │  RMSE  (root mean sq error)                    2.8141  min     │
+  │  Median abs error                              1.5467  min     │
+  │  P95   abs error                               5.2157  min     │
+  │  MAPE  (mean abs % error)                       76.44  %       │
+  │  R²                            0.9526   ███████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. GCSP_x_QTY                 ███████████████████████   100.0%  0.2652  │
+  │   2. GCSP_sqrt                  ███████████████████████    99.4%  0.2637  │
+  │   3. GCSP_log                   ███████████████████████    97.5%  0.2586  │
+  │   4. mid_gage_log               ████████████████████       87.1%  0.2311  │
+  │   5. QTY_log                    ████████████████████       86.8%  0.2301  │
+  │   6. max_len_log                ████████████████████       83.5%  0.2215  │
+  │   7. max_len_sqrt               ███████████████████        82.5%  0.2189  │
+  │   8. min_len_log                ███████████████████        82.0%  0.2175  │
+  │   9. max_gage                   ███████████████████        81.8%  0.2170  │
+  │  10. GCSP                       ███████████████████        81.1%  0.2150  │
+  │  11. mid_len_log                ███████████████████        79.9%  0.2119  │
+  │  12. QTY_sqrt                   ██████████████████         78.3%  0.2076  │
+  │  13. mid_gage                   ██████████████████         77.6%  0.2057  │
+  │  14. max_gage_sqrt              ██████████████████         77.4%  0.2053  │
+  │  15. gage_range                 ██████████████████         77.1%  0.2046  │
+  │  16. CAT_HAS_LETTERS            █████████████████          74.9%  0.1988  │
+  │  17. max_gage_log               █████████████████          74.9%  0.1986  │
+  │  18. min_len                    █████████████████          74.7%  0.1980  │
+  │  19. min_gage_log               █████████████████          73.3%  0.1944  │
+  │  20. min_gage                   █████████████████          72.4%  0.1921  │
+  │  21. mid_len                    ████████████████           69.5%  0.1843  │
+  │  22. QTY                        ████████████████           68.5%  0.1816  │
+  │  23. max_len                    ████████████████           67.8%  0.1797  │
+  │  24. CAT_LEN                    ███████████████            65.9%  0.1747  │
+  │  25. len_range                  ██████████████             61.0%  0.1619  │
+  │  26. CAT_DIGITS                 █████████████              55.1%  0.1461  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\FA_Conns_and_wires/model.pkl
+  ── FA Conns and wires check ──
+  Total rows          : 43141
+  Passed (pred ≤ ref) : 23099  (53.5%)
+  Passed (pred ≤ +5%) : 27687  (64.2%)
+  Match (±2%)         : 6095  (14.1%)
+  Failed              : 20042  (46.5%)
+  Top-5 worst (over-predictions):
+    row_local= 14  ref=5.2200  pred=14.6799  diff=+9.4599  (+181.2%)
+    row_local=  8  ref=12.8600  pred=18.3338  diff=+5.4738  (+42.6%)
+    row_local=6301  ref=0.1117  pred=4.3494  diff=+4.2377  (+3793.8%)
+    row_local=6291  ref=0.8000  pred=4.9538  diff=+4.1538  (+519.2%)
+    row_local=4811  ref=3.3000  pred=7.4192  diff=+4.1192  (+124.8%)
+
+  ──────────────────────────────────────────────────────────────────────
+  Sheet: FA Taping
+  ──────────────────────────────────────────────────────────────────────
+  Реальных строк  : 14
+  Аугментированных: 31625  (575 CUTTING × 55 слотов)
+  Итого точек     : 31639
+  TOTAL — mean=1.8369  std=4.7536  min=0.0090  max=616.0000
+
+  Epoch  200/2000  │  Train MSE 0.181089  │  Val MSE 0.027979  │   15.5s elapsed
+  Epoch  400/2000  │  Train MSE 0.185313  │  Val MSE 0.028816  │   31.1s elapsed
+  Epoch  600/2000  │  Train MSE 0.201667  │  Val MSE 0.019267  │   46.6s elapsed
+  Epoch  800/2000  │  Train MSE 0.138663  │  Val MSE 0.023625  │   62.2s elapsed
+  Epoch 1000/2000  │  Train MSE 0.088375  │  Val MSE 0.017884  │   77.7s elapsed
+  Epoch 1200/2000  │  Train MSE 0.160736  │  Val MSE 0.023453  │   93.3s elapsed
+  Epoch 1400/2000  │  Train MSE 0.032215  │  Val MSE 0.024678  │  108.9s elapsed
+  Epoch 1600/2000  │  Train MSE 0.043420  │  Val MSE 0.027111  │  124.6s elapsed
+  Epoch 1800/2000  │  Train MSE 0.148250  │  Val MSE 0.017671  │  140.2s elapsed
+  Epoch 2000/2000  │  Train MSE 0.024022  │  Val MSE 0.022959  │  156.1s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   4.65723 ┤
+           │                                V                        T 
+           │ V     T                                                   
+           │ V  T                                                      
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ VT                                                        
+           │ V T                                                       
+           │ VT                                                        
+           │ V T                                                       
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+   0.01474 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  12:09:01                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    26          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                  156.1  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                  31639          │
+  │  Training samples                               25312          │
+  │  Validation samples                              6327          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          4.657232          │
+  │  Final    train MSE                          0.024022          │
+  │  Initial  val   MSE                          2.548089          │
+  │  Final    val   MSE                          0.022959          │
+  │  Best     val   MSE                          0.013687          │
+  │  Best epoch                                       811          │
+  │  Train loss reduction                            99.5  %       │
+  │  Overfit index (val-tr)/tr                       -4.4  %       │
+  ├─  Metrics — Train  (n=25312, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        0.4080  min     │
+  │  RMSE  (root mean sq error)                    0.8850  min     │
+  │  Median abs error                              0.1057  min     │
+  │  P95   abs error                               1.7811  min     │
+  │  MAPE  (mean abs % error)                      242.88  %       │
+  │  R²                            0.9697   ███████████████████          │
+  ├─  Metrics — Val    (n=6327, denormalised values)  ────────────────┤
+  │  MAE   (mean abs error)                        0.3936  min     │
+  │  RMSE  (root mean sq error)                    0.7203  min     │
+  │  Median abs error                              0.1048  min     │
+  │  P95   abs error                               1.7570  min     │
+  │  MAPE  (mean abs % error)                      247.61  %       │
+  │  R²                            0.9465   ██████████████████          │
+  ├─  Metrics — Full   (n=31639, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        0.4051  min     │
+  │  RMSE  (root mean sq error)                    0.8546  min     │
+  │  Median abs error                              0.1055  min     │
+  │  P95   abs error                               1.7778  min     │
+  │  MAPE  (mean abs % error)                      243.83  %       │
+  │  R²                            0.9677   ███████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. CAT_HAS_LETTERS            ███████████████████████   100.0%  0.2499  │
+  │   2. GCSP_log                   ███████████████████████    96.3%  0.2406  │
+  │   3. mid_gage_log               ██████████████████████     94.1%  0.2351  │
+  │   4. GCSP_sqrt                  ██████████████████████     94.0%  0.2348  │
+  │   5. GCSP                       ██████████████████████     92.5%  0.2310  │
+  │   6. GCSP_x_QTY                 █████████████████████      90.6%  0.2264  │
+  │   7. QTY_log                    █████████████████████      90.1%  0.2251  │
+  │   8. mid_len_log                █████████████████████      90.1%  0.2251  │
+  │   9. min_len_log                █████████████████████      89.8%  0.2245  │
+  │  10. max_gage                   █████████████████████      88.9%  0.2222  │
+  │  11. max_len_sqrt               █████████████████████      87.7%  0.2192  │
+  │  12. max_len_log                ████████████████████       87.3%  0.2181  │
+  │  13. min_gage_log               ████████████████████       85.1%  0.2128  │
+  │  14. QTY_sqrt                   ████████████████████       84.2%  0.2103  │
+  │  15. max_gage_sqrt              ███████████████████        81.8%  0.2044  │
+  │  16. gage_range                 ███████████████████        81.7%  0.2040  │
+  │  17. mid_gage                   ███████████████████        79.3%  0.1981  │
+  │  18. min_gage                   ██████████████████         78.8%  0.1970  │
+  │  19. max_gage_log               ██████████████████         78.8%  0.1970  │
+  │  20. min_len                    ██████████████████         78.0%  0.1950  │
+  │  21. mid_len                    █████████████████          74.9%  0.1871  │
+  │  22. QTY                        █████████████████          74.0%  0.1848  │
+  │  23. max_len                    █████████████████          73.6%  0.1840  │
+  │  24. CAT_LEN                    █████████████████          72.7%  0.1817  │
+  │  25. len_range                  ███████████████            65.7%  0.1642  │
+  │  26. CAT_DIGITS                 ██████████████             60.8%  0.1518  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\FA_Taping/model.pkl
+  ── FA Taping check ──
+  Total rows          : 31639
+  Passed (pred ≤ ref) : 10043  (31.7%)
+  Passed (pred ≤ +5%) : 10171  (32.1%)
+  Match (±2%)         :  135  (0.4%)
+  Failed              : 21596  (68.3%)
+  Top-5 worst (over-predictions):
+    row_local=  7  ref=11.9000  pred=15.2730  diff=+3.3730  (+28.3%)
+    row_local=  6  ref=10.7800  pred=12.0836  diff=+1.3036  (+12.1%)
+    row_local=28983  ref=0.0180  pred=0.3858  diff=+0.3678  (+2043.3%)
+    row_local=28991  ref=0.0180  pred=0.3858  diff=+0.3678  (+2043.3%)
+    row_local=28967  ref=0.0290  pred=0.3952  diff=+0.3662  (+1262.7%)
+
+  ──────────────────────────────────────────────────────────────────────
+  Sheet: FA Miscellaneos
+  ──────────────────────────────────────────────────────────────────────
+  Реальных строк  : 32
+  Аугментированных: 54050  (575 CUTTING × 94 слотов)
+  Итого точек     : 54082
+  TOTAL — mean=28.8034  std=132.8895  min=0.0030  max=1290.6000
+
+  Epoch  200/2000  │  Train MSE 0.126929  │  Val MSE 0.026627  │   26.1s elapsed
+  Epoch  400/2000  │  Train MSE 0.081976  │  Val MSE 0.022907  │   52.0s elapsed
+  Epoch  600/2000  │  Train MSE 0.063153  │  Val MSE 0.028906  │   77.8s elapsed
+  Epoch  800/2000  │  Train MSE 0.057497  │  Val MSE 0.042076  │  103.7s elapsed
+  Epoch 1000/2000  │  Train MSE 0.052364  │  Val MSE 0.041654  │  129.7s elapsed
+  Epoch 1200/2000  │  Train MSE 0.049038  │  Val MSE 0.048070  │  155.6s elapsed
+  Epoch 1400/2000  │  Train MSE 0.041715  │  Val MSE 0.051195  │  181.5s elapsed
+  Epoch 1600/2000  │  Train MSE 0.036176  │  Val MSE 0.058304  │  207.4s elapsed
+  Epoch 1800/2000  │  Train MSE 0.037398  │  Val MSE 0.066608  │  233.3s elapsed
+  Epoch 2000/2000  │  Train MSE 0.033169  │  Val MSE 0.064095  │  259.2s elapsed
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   4.30785 ┤
+           │                                    V                    T 
+           │ V  T                                                      
+           │ V T                                                       
+           │ VT                                                        
+           │ VT                                                        
+           │ VT                                                        
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+           │ ✪                                                         
+   0.01988 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  12:13:21                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    26          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                  259.2  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                  54082          │
+  │  Training samples                               43266          │
+  │  Validation samples                             10816          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          4.307848          │
+  │  Final    train MSE                          0.033169          │
+  │  Initial  val   MSE                          2.726114          │
+  │  Final    val   MSE                          0.064095          │
+  │  Best     val   MSE                          0.019002          │
+  │  Best epoch                                       362          │
+  │  Train loss reduction                            99.2  %       │
+  │  Overfit index (val-tr)/tr                      +93.2  %       │
+  ├─  Metrics — Train  (n=43266, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        7.5156  min     │
+  │  RMSE  (root mean sq error)                   31.9777  min     │
+  │  Median abs error                              2.8460  min     │
+  │  P95   abs error                              17.3201  min     │
+  │  MAPE  (mean abs % error)                     1230.68  %       │
+  │  R²                            0.9409   ██████████████████          │
+  ├─  Metrics — Val    (n=10816, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        7.8620  min     │
+  │  RMSE  (root mean sq error)                   33.6437  min     │
+  │  Median abs error                              2.8461  min     │
+  │  P95   abs error                              18.1431  min     │
+  │  MAPE  (mean abs % error)                     1083.05  %       │
+  │  R²                            0.9408   ██████████████████          │
+  ├─  Metrics — Full   (n=54082, denormalised values)  ───────────────┤
+  │  MAE   (mean abs error)                        7.5849  min     │
+  │  RMSE  (root mean sq error)                   32.3178  min     │
+  │  Median abs error                              2.8460  min     │
+  │  P95   abs error                              17.5137  min     │
+  │  MAPE  (mean abs % error)                     1201.15  %       │
+  │  R²                            0.9409   ██████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. GCSP_sqrt                  ███████████████████████   100.0%  0.2715  │
+  │   2. CAT_HAS_LETTERS            ██████████████████████     92.1%  0.2499  │
+  │   3. mid_gage_log               █████████████████████      87.9%  0.2385  │
+  │   4. GCSP_x_QTY                 ████████████████████       85.6%  0.2325  │
+  │   5. min_gage_log               ████████████████████       84.5%  0.2294  │
+  │   6. mid_len_log                ████████████████████       83.9%  0.2277  │
+  │   7. max_gage                   ████████████████████       83.8%  0.2275  │
+  │   8. min_len_log                ████████████████████       83.8%  0.2274  │
+  │   9. max_len_log                ███████████████████        82.9%  0.2250  │
+  │  10. GCSP_log                   ███████████████████        82.4%  0.2235  │
+  │  11. max_len_sqrt               ███████████████████        81.7%  0.2217  │
+  │  12. QTY_log                    ███████████████████        81.4%  0.2210  │
+  │  13. gage_range                 ██████████████████         78.6%  0.2133  │
+  │  14. QTY_sqrt                   ██████████████████         76.9%  0.2089  │
+  │  15. GCSP                       ██████████████████         76.8%  0.2086  │
+  │  16. min_gage                   ██████████████████         76.7%  0.2083  │
+  │  17. mid_gage                   ██████████████████         76.4%  0.2075  │
+  │  18. max_gage_sqrt              ██████████████████         75.8%  0.2058  │
+  │  19. CAT_LEN                    ██████████████████         75.5%  0.2050  │
+  │  20. max_gage_log               █████████████████          74.5%  0.2022  │
+  │  21. min_len                    █████████████████          71.6%  0.1943  │
+  │  22. max_len                    ████████████████           70.7%  0.1920  │
+  │  23. mid_len                    ████████████████           69.5%  0.1885  │
+  │  24. QTY                        ███████████████            66.2%  0.1797  │
+  │  25. len_range                  ███████████████            64.0%  0.1736  │
+  │  26. CAT_DIGITS                 █████████████              58.3%  0.1583  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\FA_Miscellaneos/model.pkl
+  ── FA Miscellaneos check ──
+  Total rows          : 54082
+  Passed (pred ≤ ref) : 22471  (41.5%)
+  Passed (pred ≤ +5%) : 23840  (44.1%)
+  Match (±2%)         : 1240  (2.3%)
+  Failed              : 31611  (58.5%)
+  Top-5 worst (over-predictions):
+    row_local=  9  ref=10.0960  pred=24.3174  diff=+14.2214  (+140.9%)
+    row_local= 13  ref=14.4000  pred=28.0962  diff=+13.6962  (+95.1%)
+    row_local= 19  ref=2.8000  pred=10.5854  diff=+7.7854  (+278.0%)
+    row_local= 23  ref=2.8000  pred=10.5854  diff=+7.7854  (+278.0%)
+    row_local= 10  ref=4.2000  pred=11.7335  diff=+7.5335  (+179.4%)
+
+  ══════════════════════════════════════════════════════════════════════
+                            📋  SESSION SUMMARY                          
+  ══════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  Sheet                          N      MAE     R²   Pass≤ref%   Pass≤+5%%        Status  │
+  ├──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │  CUTTING                      575   2.9417 0.8472       41.4%       48.7%     ✅ trained  │
+  │  TOTAL values GCSD             14   3.8819 0.9448       35.7%       35.7%     ✅ trained  │
+  │  LEAD PREP                  75923   3.0330 0.9498       52.9%       59.9%     ✅ trained  │
+  │  LEAD PREP FA              131101   3.4174 0.9398       49.1%       55.6%     ✅ trained  │
+  │  High Voltage               37950   2.8277 0.9548       47.1%       59.8%     ✅ trained  │
+  │  FA Conns and wires         43141   1.9220 0.9526       53.5%       64.2%     ✅ trained  │
+  │  FA Taping                  31639   0.4051 0.9677       31.7%       32.1%     ✅ trained  │
+  │  FA Miscellaneos            54082   7.5849 0.9409       41.5%       44.1%     ✅ trained  │
+  └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Средний MAE : 3.2517 мин
+  Средний R²  : 0.9372
+  Среднее Pass≤ref: 44.1%
+  Среднее Pass≤+5%: 50.0%
+
+  ✅  Обучение завершено.
+  ⏱  Всего: 1776.5 сек
+  📁  Лог: logs/training.log
+  ══════════════════════════════════════════════════════════════════════
+
+
+  ══════════════════════════════════════════════════════════════════════
+                🚀  TRAINING SESSION (Wire-by-Wire Concept)              
+                      Started: 2026-06-02  12:41:22                     
+                            File: K0_old.xlsx                           
+  ══════════════════════════════════════════════════════════════════════
+
+  ======================================================================
+  Sheet: CUTTING  (Wire-by-Wire Training)
+  ======================================================================
+
+  Концепт: каждая строка I3..I681 — отдельный провод/операция.
+  Подставляем QTY=1, цель = Global Sec/Pc (время на шт).
+  Признаки: Min Gage, Max Gage, Min Length, Max Length.
+
+  Строк с валидными параметрами (GCSP > 0): 575
+  GCSP — mean=10.6258  std=16.9870  min=0.6100  max=129.3000
+
+  Пример активации строк (QTY=1):
+    Строка   3 | Gage [0.3–5.0] | Len [50–1000] | GCSP=1.2301 → TOTAL TIME = 1.2301 мин
+    Строка   4 | Gage [0.3–5.0] | Len [1001–1500] | GCSP=1.7051 → TOTAL TIME = 1.7051 мин
+    Строка   5 | Gage [0.3–5.0] | Len [1501–2000] | GCSP=2.2101 → TOTAL TIME = 2.2101 мин
+    Строка   6 | Gage [0.3–5.0] | Len [2001–2500] | GCSP=2.7451 → TOTAL TIME = 2.7451 мин
+    Строка   7 | Gage [0.3–5.0] | Len [2501–3000] | GCSP=3.3101 → TOTAL TIME = 3.3101 мин
+
+  Epoch  200/3000  │  Train MSE 0.563319  │  Val MSE 0.405269  │    0.2s elapsed
+  Epoch  400/3000  │  Train MSE 0.508014  │  Val MSE 0.371341  │    0.4s elapsed
+  Epoch  600/3000  │  Train MSE 0.473760  │  Val MSE 0.337630  │    0.6s elapsed
+  Epoch  800/3000  │  Train MSE 0.428137  │  Val MSE 0.310534  │    0.8s elapsed
+  Epoch 1000/3000  │  Train MSE 0.402585  │  Val MSE 0.264962  │    1.1s elapsed
+  Epoch 1200/3000  │  Train MSE 0.361975  │  Val MSE 0.194295  │    1.3s elapsed
+  Epoch 1400/3000  │  Train MSE 0.298073  │  Val MSE 0.160547  │    1.5s elapsed
+  Epoch 1600/3000  │  Train MSE 0.258581  │  Val MSE 0.145912  │    1.7s elapsed
+  Epoch 1800/3000  │  Train MSE 0.240541  │  Val MSE 0.152996  │    1.9s elapsed
+  ⏹  Early stop at epoch 1963  (best val=0.139480 @ ep 1663)  2.1s
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   2.97619 ┤
+           │                                                    T    V 
+           │       V    T                                              
+           │      V    T                                               
+           │      V  T                                                 
+           │      V   T                                                
+           │     V   T                                                 
+           │     V  T                                                  
+           │     V  T                                                  
+           │     V  T                                                  
+           │     V T                                                   
+           │     V  T                                                  
+           │    V  T                                                   
+           │    V  T                                                   
+           │    V T                                                    
+           │    V T                                                    
+           │    V  T                                                   
+           │   V  T                                                    
+           │   V  T                                                    
+           │   V T                                                     
+           │  V  T                                                     
+           │  V  T                                                     
+           │  V T                                                      
+           │ V   T                                                     
+           │ V  T                                                      
+           │ V T                                                       
+           │ V T                                                       
+           │ V T                                                       
+           │ V T                                                       
+           │ V T                                                       
+           │ VT                                                        
+           │ VT                                                        
+           │ V T                                                       
+           │ V T                                                       
+           │ VT                                                        
+           │ VT                                                        
+           │ VT                                                        
+   0.14345 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  12:41:24                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    19          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                    2.1  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                    575          │
+  │  Training samples                                 460          │
+  │  Validation samples                               115          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          2.678514          │
+  │  Final    train MSE                          0.204859          │
+  │  Initial  val   MSE                          2.976191          │
+  │  Final    val   MSE                          0.151205          │
+  │  Best     val   MSE                          0.139480          │
+  │  Best epoch                                      1663          │
+  │  Train loss reduction                            92.4  %       │
+  │  Overfit index (val-tr)/tr                      -26.2  %       │
+  ├─  Metrics — Train  (n=460, denormalised values)  ─────────────────┤
+  │  MAE   (mean abs error)                        3.5975  min     │
+  │  RMSE  (root mean sq error)                   10.9871  min     │
+  │  Median abs error                              0.9845  min     │
+  │  P95   abs error                              12.7008  min     │
+  │  MAPE  (mean abs % error)                       31.17  %       │
+  │  R²                             0.6119   ████████████          │
+  ├─  Metrics — Val    (n=115, denormalised values)  ─────────────────┤
+  │  MAE   (mean abs error)                        2.5932  min     │
+  │  RMSE  (root mean sq error)                    7.1646  min     │
+  │  Median abs error                              0.9737  min     │
+  │  P95   abs error                               6.9728  min     │
+  │  MAPE  (mean abs % error)                       29.61  %       │
+  │  R²                            0.7376   ██████████████          │
+  ├─  Metrics — Full   (n=575, denormalised values)  ─────────────────┤
+  │  MAE   (mean abs error)                        3.3966  min     │
+  │  RMSE  (root mean sq error)                   10.3363  min     │
+  │  Median abs error                              0.9816  min     │
+  │  P95   abs error                              10.6405  min     │
+  │  MAPE  (mean abs % error)                       30.86  %       │
+  │  R²                             0.6297   ████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. min_gage_log               ███████████████████████   100.0%  0.3090  │
+  │   2. max_gage_sqrt              ███████████████████████    96.7%  0.2989  │
+  │   3. len_range                  ███████████████████████    96.6%  0.2986  │
+  │   4. gage_x_maxlen              ██████████████████████     95.0%  0.2935  │
+  │   5. max_gage_log               █████████████████████      91.0%  0.2810  │
+  │   6. max_len                    ████████████████████       85.6%  0.2646  │
+  │   7. min_len                    ████████████████████       85.2%  0.2634  │
+  │   8. max_len_log                ████████████████████       84.9%  0.2625  │
+  │   9. mid_len                    ████████████████████       83.5%  0.2580  │
+  │  10. mid_gage_log               ███████████████████        80.2%  0.2479  │
+  │  11. min_len_log                ███████████████████        79.4%  0.2454  │
+  │  12. mid_gage                   ██████████████████         78.2%  0.2415  │
+  │  13. mid_len_sqrt               ██████████████████         75.3%  0.2326  │
+  │  14. mid_len_log                █████████████████          74.8%  0.2310  │
+  │  15. gage_x_len                 █████████████████          74.6%  0.2306  │
+  │  16. gage_range                 █████████████████          73.8%  0.2279  │
+  │  17. max_len_sqrt               █████████████████          73.2%  0.2262  │
+  │  18. min_gage                   █████████████████          72.1%  0.2228  │
+  │  19. max_gage                   █████████████████          72.0%  0.2225  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\CUTTING/model.pkl
+  ── CUTTING wire-by-wire check ──
+  Total rows          : 575
+  Passed (pred ≤ ref) :  270  (47.0%)
+  Passed (pred ≤ +5%) :  297  (51.7%)
+  Match (±2%)         :   24  (4.2%)
+  Failed              :  305  (53.0%)
+  Top-5 worst (over-predictions):
+    row_local=507  ref=30.4500  pred=35.1989  diff=+4.7489  (+15.6%)
+    row_local=506  ref=24.4800  pred=27.8896  diff=+3.4096  (+13.9%)
+    row_local= 57  ref=9.4200  pred=12.4432  diff=+3.0232  (+32.1%)
+    row_local= 90  ref=2.0224  pred=4.8233  diff=+2.8009  (+138.5%)
+    row_local= 89  ref=1.8246  pred=4.5906  diff=+2.7660  (+151.6%)
+
+  ======================================================================
+  Sheet: TOTAL values GCSD
+  ======================================================================
+  Всего строк: 14
+  Для обучения (с меткой): 14
+  Без метки (для предсказания): 0
+  Epoch  200/2000  │  Train MSE 0.223951  │  Val MSE 0.087627  │    0.0s elapsed
+  ⏹  Early stop at epoch 364  (best val=0.035190 @ ep 64)  0.1s
+
+  📊  LOSS CURVE   T = Train   V = Val   ✪ = overlap
+
+   2.74793 ┤
+           │                                                     V   T 
+           │            T         V                                    
+           │       V T                                                 
+           │  V   T                                                    
+           │ V  T                                                      
+           │ V     T                                                   
+           │ V T                                                       
+           │ V T                                                       
+           │ V  T                                                      
+           │ V   T                                                     
+           │ ✪                                                         
+           │ V  T                                                      
+           │ VT                                                        
+           │ V T                                                       
+           │ V T                                                       
+           │ V  T                                                      
+           │ V   T                                                     
+           │ VT                                                        
+           │  VT                                                       
+           │  V T                                                      
+           │  VT                                                       
+           │  ✪                                                        
+           │ TV                                                        
+           │  V  T                                                     
+           │ V  T                                                      
+           │ ✪                                                         
+           │ V   T                                                     
+           │ VT                                                        
+           │ V  T                                                      
+           │ VT                                                        
+           │ V T                                                       
+           │ VT                                                        
+           │ V T                                                       
+           │ V T                                                       
+           │ V T                                                       
+           │ V  T                                                      
+   0.03541 ┤
+           └─────────────────────────────▶  epochs
+
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                 🧠  NEURAL NETWORK TRAINING REPORT                │
+  │                        2026-06-02  12:41:24                      │
+  ├──────────────────────────────────────────────────────────────────┤
+  ├─  Architecture  ──────────────────────────────────────────────────┤
+  │  Input features                                    10          │
+  │  Hidden layers                           64 → 32 → 16          │
+  │  Output                               1  (regression)          │
+  │  Activation                         ReLU + linear out          │
+  │  Optimizer                     Adam  β₁=0.9  β₂=0.999          │
+  │  Dropout rate                                     15%          │
+  │  Training time                                    0.1  sec     │
+  ├─  Dataset split  ─────────────────────────────────────────────────┤
+  │  Total samples                                     14          │
+  │  Training samples                                  12          │
+  │  Validation samples                                 2          │
+  ├─  Loss history  (MSE, normalised space)  ─────────────────────────┤
+  │  Initial  train MSE                          2.747935          │
+  │  Final    train MSE                          0.201634          │
+  │  Initial  val   MSE                          2.545989          │
+  │  Final    val   MSE                          0.061488          │
+  │  Best     val   MSE                          0.035190          │
+  │  Best epoch                                        64          │
+  │  Train loss reduction                            92.7  %       │
+  │  Overfit index (val-tr)/tr                      -69.5  %       │
+  ├─  Metrics — Train  (n=12, denormalised values)  ──────────────────┤
+  │  MAE   (mean abs error)                        4.2720  min     │
+  │  RMSE  (root mean sq error)                    6.2961  min     │
+  │  Median abs error                              2.1571  min     │
+  │  P95   abs error                              11.6038  min     │
+  │  MAPE  (mean abs % error)                       20.85  %       │
+  │  R²                            0.9381   ██████████████████          │
+  ├─  Metrics — Val    (n=2, denormalised values)  ───────────────────┤
+  │  MAE   (mean abs error)                        3.3124  min     │
+  │  RMSE  (root mean sq error)                    4.6252  min     │
+  │  Median abs error                              3.3124  min     │
+  │  P95   abs error                               6.2177  min     │
+  │  MAPE  (mean abs % error)                       30.35  %       │
+  │  R²                            0.7887   ███████████████          │
+  ├─  Metrics — Full   (n=14, denormalised values)  ──────────────────┤
+  │  MAE   (mean abs error)                        4.1349  min     │
+  │  RMSE  (root mean sq error)                    6.0856  min     │
+  │  Median abs error                              2.1571  min     │
+  │  P95   abs error                              11.5759  min     │
+  │  MAPE  (mean abs % error)                       22.20  %       │
+  │  R²                            0.9360   ██████████████████          │
+  ├─  Feature importance  (mean |W₁| per input)  ─────────────────────┤
+  │   1. PART_HAS_LETTER            ███████████████████████   100.0%  0.4029  │
+  │   2. ADJ_log                    ██████████████████████     95.5%  0.3846  │
+  │   3. GCSD_sqrt                  ██████████████████████     94.6%  0.3813  │
+  │   4. PART_LEN                   ██████████████████████     93.5%  0.3766  │
+  │   5. GCSD_log                   ██████████████████████     92.7%  0.3734  │
+  │   6. ADJ_sqrt                   ████████████████████       85.3%  0.3436  │
+  │   7. PART_DIGITS                ██████████████████         79.0%  0.3183  │
+  │   8. GCSD_x_ADJ                 ██████████████████         78.5%  0.3161  │
+  │   9. ADJ.                       █████████████████          72.5%  0.2923  │
+  │  10. GCSD                       █████████████████          72.0%  0.2900  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  💾 Model saved → models\TOTAL_values_GCSD/model.pkl
+  ── TOTAL values GCSD check ──
+  Total rows          : 14
+  Passed (pred ≤ ref) :    6  (42.9%)
+  Passed (pred ≤ +5%) :    6  (42.9%)
+  Match (±2%)         :    0  (0.0%)
+  Failed              :    8  (57.1%)
+  Top-5 worst (over-predictions):
+    row_local= 12  ref=7.2917  pred=9.4488  diff=+2.1571  (+29.6%)
+    row_local=  3  ref=7.2917  pred=9.4488  diff=+2.1571  (+29.6%)
+    row_local=  4  ref=3.1518  pred=3.4045  diff=+0.2527  (+8.0%)
+    row_local= 13  ref=3.1518  pred=3.4045  diff=+0.2527  (+8.0%)
+    row_local= 10  ref=2.7312  pred=2.9375  diff=+0.2063  (+7.6%)
+
+  ======================================================================
+  Generic Sheets  (Incremental CUTTING-by-CUTTING Training)
+  ======================================================================
+
+  Строк CUTTING: 575
+  Концепт: каждая строка CUTTING активирует слоты листа → partial_fit()
+  Эпох на строку CUTTING: 500
+
+
+  ======================================================================
+  Sheet: LEAD PREP  (incremental)
+  ======================================================================
+  Реальных строк : 23
+  Слотов (QTY=0) : 132
+  Строк CUTTING  : 575
+  Итого шагов    : 575 строк × 132 слотов × 500 эпох
+
+  Инициализация нормализации (первый fit)...
+  Нормализация зафиксирована. Начинаем инкрементальное обучение...
+
+  [  9.9%]  CUTTING строка 57/575  gage=[36.0–50.0]  len=[1001–2000]  t=8814 шагов Adam
+  [ 19.8%]  CUTTING строка 114/575  gage=[0.1–0.1]  len=[17001–19000]  t=18643 шагов Adam
+  [ 29.7%]  CUTTING строка 171/575  gage=[0.1–0.1]  len=[11001–13000]  t=28482 шагов Adam
+  [ 39.7%]  CUTTING строка 228/575  gage=[0.2–6.0]  len=[7001–8000]  t=37732 шагов Adam
+  [ 49.6%]  CUTTING строка 285/575  gage=[0.2–6.0]  len=[12001–13000]  t=45721 шагов Adam
+  [ 59.5%]  CUTTING строка 342/575  gage=[0.2–2.5]  len=[700–1000]  t=53973 шагов Adam
+  [ 69.4%]  CUTTING строка 399/575  gage=[2.8–40.0]  len=[201–400]  t=63273 шагов Adam
+  [ 79.3%]  CUTTING строка 456/575  gage=[4.5–60.0]  len=[801–900]  t=71077 шагов Adam
+  [ 89.2%]  CUTTING строка 513/575  gage=[0.0–0.0]  len=[9001–10000]  t=78883 шагов Adam
+  [ 99.1%]  CUTTING строка 570/575  gage=[0.0–40.0]  len=[9001–9250]  t=86034 шагов Adam
+  [100.0%]  CUTTING строка 575/575  gage=[6.1–103.0]  len=[1–59]  t=87112 шагов Adam
+
+  Инкрементальное обучение завершено. Всего шагов Adam: 87112
+  💾 Model saved → models\LEAD_PREP/model.pkl
+  ── LEAD PREP final check ──
+  Total rows          : 155
+  Passed (pred ≤ ref) :   96  (61.9%)
+  Passed (pred ≤ +5%) :  105  (67.7%)
+  Match (±2%)         :    5  (3.2%)
+  Failed              :   59  (38.1%)
+  Top-5 worst (over-predictions):
+    row_local=101  ref=21.0000  pred=26.6216  diff=+5.6216  (+26.8%)
+    row_local=114  ref=22.0000  pred=27.4928  diff=+5.4928  (+25.0%)
+    row_local= 26  ref=20.7400  pred=26.0055  diff=+5.2655  (+25.4%)
+    row_local=  1  ref=12.0000  pred=16.9836  diff=+4.9836  (+41.5%)
+    row_local= 88  ref=24.3000  pred=29.1530  diff=+4.8530  (+20.0%)
+
+  ======================================================================
+  Sheet: LEAD PREP FA  (incremental)
+  ======================================================================
+  Реальных строк : 1
+  Слотов (QTY=0) : 228
+  Строк CUTTING  : 575
+  Итого шагов    : 575 строк × 228 слотов × 500 эпох
+
+  Инициализация нормализации (первый fit)...
+  Нормализация зафиксирована. Начинаем инкрементальное обучение...
+
+  [  9.9%]  CUTTING строка 57/575  gage=[36.0–50.0]  len=[1001–2000]  t=10638 шагов Adam
+  [ 19.8%]  CUTTING строка 114/575  gage=[0.1–0.1]  len=[17001–19000]  t=16961 шагов Adam
+  [ 29.7%]  CUTTING строка 171/575  gage=[0.1–0.1]  len=[11001–13000]  t=27543 шагов Adam
+  [ 39.7%]  CUTTING строка 228/575  gage=[0.2–6.0]  len=[7001–8000]  t=36169 шагов Adam
+  [ 49.6%]  CUTTING строка 285/575  gage=[0.2–6.0]  len=[12001–13000]  t=46106 шагов Adam
+  [ 59.5%]  CUTTING строка 342/575  gage=[0.2–2.5]  len=[700–1000]  t=54918 шагов Adam
+  [ 69.4%]  CUTTING строка 399/575  gage=[2.8–40.0]  len=[201–400]  t=63662 шагов Adam
+  [ 79.3%]  CUTTING строка 456/575  gage=[4.5–60.0]  len=[801–900]  t=72479 шагов Adam
+  [ 89.2%]  CUTTING строка 513/575  gage=[0.0–0.0]  len=[9001–10000]  t=81394 шагов Adam
+  [ 99.1%]  CUTTING строка 570/575  gage=[0.0–40.0]  len=[9001–9250]  t=90829 шагов Adam
+  [100.0%]  CUTTING строка 575/575  gage=[6.1–103.0]  len=[1–59]  t=91927 шагов Adam
+
+  Инкрементальное обучение завершено. Всего шагов Adam: 91927
+  💾 Model saved → models\LEAD_PREP_FA/model.pkl
+  ── LEAD PREP FA final check ──
+  Total rows          : 229
+  Passed (pred ≤ ref) :  132  (57.6%)
+  Passed (pred ≤ +5%) :  132  (57.6%)
+  Match (±2%)         :    0  (0.0%)
+  Failed              :   97  (42.4%)
+  Top-5 worst (over-predictions):
+    row_local=199  ref=0.0100  pred=31.4572  diff=+31.4472  (+314471.8%)
+    row_local=197  ref=0.0100  pred=31.4572  diff=+31.4472  (+314471.8%)
+    row_local=174  ref=0.4000  pred=26.4020  diff=+26.0020  (+6500.5%)
+    row_local= 73  ref=0.8000  pred=23.1961  diff=+22.3961  (+2799.5%)
+    row_local= 81  ref=0.9100  pred=22.7489  diff=+21.8389  (+2399.9%)
+
+  ======================================================================
+  Sheet: High Voltage  (incremental)
+  ======================================================================
+  Реальных строк : 0
+  Слотов (QTY=0) : 66
+  Строк CUTTING  : 575
+  Итого шагов    : 575 строк × 66 слотов × 500 эпох
+
+  Инициализация нормализации (первый fit)...
+  Нормализация зафиксирована. Начинаем инкрементальное обучение...
+
+  [  9.9%]  CUTTING строка 57/575  gage=[36.0–50.0]  len=[1001–2000]  t=9042 шагов Adam
+  [ 19.8%]  CUTTING строка 114/575  gage=[0.1–0.1]  len=[17001–19000]  t=16081 шагов Adam
+  [ 29.7%]  CUTTING строка 171/575  gage=[0.1–0.1]  len=[11001–13000]  t=23691 шагов Adam
+  [ 39.7%]  CUTTING строка 228/575  gage=[0.2–6.0]  len=[7001–8000]  t=29926 шагов Adam
+  [ 49.6%]  CUTTING строка 285/575  gage=[0.2–6.0]  len=[12001–13000]  t=35903 шагов Adam
+  [ 59.5%]  CUTTING строка 342/575  gage=[0.2–2.5]  len=[700–1000]  t=42466 шагов Adam
+  [ 69.4%]  CUTTING строка 399/575  gage=[2.8–40.0]  len=[201–400]  t=48802 шагов Adam
+  [ 79.3%]  CUTTING строка 456/575  gage=[4.5–60.0]  len=[801–900]  t=54864 шагов Adam
+  [ 89.2%]  CUTTING строка 513/575  gage=[0.0–0.0]  len=[9001–10000]  t=60769 шагов Adam
+  [ 99.1%]  CUTTING строка 570/575  gage=[0.0–40.0]  len=[9001–9250]  t=66621 шагов Adam
+  [100.0%]  CUTTING строка 575/575  gage=[6.1–103.0]  len=[1–59]  t=67173 шагов Adam
+
+  Инкрементальное обучение завершено. Всего шагов Adam: 67173
+  💾 Model saved → models\High_Voltage/model.pkl
+  ── High Voltage final check ──
+  Total rows          : 66
+  Passed (pred ≤ ref) :   37  (56.1%)
+  Passed (pred ≤ +5%) :   38  (57.6%)
+  Match (±2%)         :    0  (0.0%)
+  Failed              :   29  (43.9%)
+  Top-5 worst (over-predictions):
+    row_local= 57  ref=0.1500  pred=11.4378  diff=+11.2878  (+7525.2%)
+    row_local= 58  ref=0.2600  pred=11.4378  diff=+11.1778  (+4299.2%)
+    row_local= 62  ref=0.5000  pred=11.4378  diff=+10.9378  (+2187.6%)
+    row_local= 61  ref=0.5000  pred=11.4378  diff=+10.9378  (+2187.6%)
+    row_local= 59  ref=4.0000  pred=11.4378  diff=+7.4378  (+185.9%)
+
+  ======================================================================
+  Sheet: FA Conns and wires  (incremental)
+  ======================================================================
+  Реальных строк : 16
+  Слотов (QTY=0) : 75
+  Строк CUTTING  : 575
+  Итого шагов    : 575 строк × 75 слотов × 500 эпох
+
+  Инициализация нормализации (первый fit)...
+  Нормализация зафиксирована. Начинаем инкрементальное обучение...
+
+  [  9.9%]  CUTTING строка 57/575  gage=[36.0–50.0]  len=[1001–2000]  t=9887 шагов Adam
+  [ 19.8%]  CUTTING строка 114/575  gage=[0.1–0.1]  len=[17001–19000]  t=20510 шагов Adam
+  [ 29.7%]  CUTTING строка 171/575  gage=[0.1–0.1]  len=[11001–13000]  t=29643 шагов Adam
+  [ 39.7%]  CUTTING строка 228/575  gage=[0.2–6.0]  len=[7001–8000]  t=39282 шагов Adam
+  [ 49.6%]  CUTTING строка 285/575  gage=[0.2–6.0]  len=[12001–13000]  t=47801 шагов Adam
+  [ 59.5%]  CUTTING строка 342/575  gage=[0.2–2.5]  len=[700–1000]  t=55834 шагов Adam
+  [ 69.4%]  CUTTING строка 399/575  gage=[2.8–40.0]  len=[201–400]  t=64084 шагов Adam
+  [ 79.3%]  CUTTING строка 456/575  gage=[4.5–60.0]  len=[801–900]  t=70828 шагов Adam
+  [ 89.2%]  CUTTING строка 513/575  gage=[0.0–0.0]  len=[9001–10000]  t=78706 шагов Adam
+  [ 99.1%]  CUTTING строка 570/575  gage=[0.0–40.0]  len=[9001–9250]  t=86574 шагов Adam
+  [100.0%]  CUTTING строка 575/575  gage=[6.1–103.0]  len=[1–59]  t=87269 шагов Adam
+
+  Инкрементальное обучение завершено. Всего шагов Adam: 87269
+  💾 Model saved → models\FA_Conns_and_wires/model.pkl
+  ── FA Conns and wires final check ──
+  Total rows          : 91
+  Passed (pred ≤ ref) :   39  (42.9%)
+  Passed (pred ≤ +5%) :   52  (57.1%)
+  Match (±2%)         :   13  (14.3%)
+  Failed              :   52  (57.1%)
+  Top-5 worst (over-predictions):
+    row_local= 18  ref=17.2000  pred=25.1210  diff=+7.9210  (+46.1%)
+    row_local= 53  ref=17.8350  pred=25.5918  diff=+7.7568  (+43.5%)
+    row_local= 32  ref=17.1000  pred=24.4945  diff=+7.3945  (+43.2%)
+    row_local= 15  ref=6.0000  pred=13.3185  diff=+7.3185  (+122.0%)
+    row_local= 19  ref=18.7000  pred=25.8909  diff=+7.1909  (+38.5%)
+
+  ======================================================================
+  Sheet: FA Taping  (incremental)
+  ======================================================================
+  Реальных строк : 14
+  Слотов (QTY=0) : 55
+  Строк CUTTING  : 575
+  Итого шагов    : 575 строк × 55 слотов × 500 эпох
+
+  Инициализация нормализации (первый fit)...
+  Нормализация зафиксирована. Начинаем инкрементальное обучение...
+
+  [  9.9%]  CUTTING строка 57/575  gage=[36.0–50.0]  len=[1001–2000]  t=9402 шагов Adam
+  [ 19.8%]  CUTTING строка 114/575  gage=[0.1–0.1]  len=[17001–19000]  t=17302 шагов Adam
+  [ 29.7%]  CUTTING строка 171/575  gage=[0.1–0.1]  len=[11001–13000]  t=25506 шагов Adam
+  [ 39.7%]  CUTTING строка 228/575  gage=[0.2–6.0]  len=[7001–8000]  t=32916 шагов Adam
+  [ 49.6%]  CUTTING строка 285/575  gage=[0.2–6.0]  len=[12001–13000]  t=40174 шагов Adam
+  [ 59.5%]  CUTTING строка 342/575  gage=[0.2–2.5]  len=[700–1000]  t=46894 шагов Adam
+  [ 69.4%]  CUTTING строка 399/575  gage=[2.8–40.0]  len=[201–400]  t=54214 шагов Adam
+  [ 79.3%]  CUTTING строка 456/575  gage=[4.5–60.0]  len=[801–900]  t=61334 шагов Adam
+  [ 89.2%]  CUTTING строка 513/575  gage=[0.0–0.0]  len=[9001–10000]  t=69542 шагов Adam
+  [ 99.1%]  CUTTING строка 570/575  gage=[0.0–40.0]  len=[9001–9250]  t=77721 шагов Adam
+  [100.0%]  CUTTING строка 575/575  gage=[6.1–103.0]  len=[1–59]  t=78445 шагов Adam
+
+  Инкрементальное обучение завершено. Всего шагов Adam: 78445
+  💾 Model saved → models\FA_Taping/model.pkl
+  ── FA Taping final check ──
+  Total rows          : 69
+  Passed (pred ≤ ref) :    8  (11.6%)
+  Passed (pred ≤ +5%) :   12  (17.4%)
+  Match (±2%)         :    5  (7.2%)
+  Failed              :   61  (88.4%)
+  Top-5 worst (over-predictions):
+    row_local= 52  ref=4.0000  pred=9.2515  diff=+5.2515  (+131.3%)
+    row_local= 54  ref=4.5000  pred=9.6300  diff=+5.1300  (+114.0%)
+    row_local= 48  ref=4.9000  pred=9.5477  diff=+4.6477  (+94.9%)
+    row_local= 17  ref=3.0000  pred=6.8476  diff=+3.8476  (+128.3%)
+    row_local= 64  ref=4.0000  pred=7.8444  diff=+3.8444  (+96.1%)
+
+  ======================================================================
+  Sheet: FA Miscellaneos  (incremental)
+  ======================================================================
+  Реальных строк : 32
+  Слотов (QTY=0) : 94
+  Строк CUTTING  : 575
+  Итого шагов    : 575 строк × 94 слотов × 500 эпох
+
+  Инициализация нормализации (первый fit)...
+  Нормализация зафиксирована. Начинаем инкрементальное обучение...
+
+  [  9.9%]  CUTTING строка 57/575  gage=[36.0–50.0]  len=[1001–2000]  t=9262 шагов Adam
+  [ 19.8%]  CUTTING строка 114/575  gage=[0.1–0.1]  len=[17001–19000]  t=19598 шагов Adam
+  [ 29.7%]  CUTTING строка 171/575  gage=[0.1–0.1]  len=[11001–13000]  t=28355 шагов Adam
+  [ 39.7%]  CUTTING строка 228/575  gage=[0.2–6.0]  len=[7001–8000]  t=38037 шагов Adam
+  [ 49.6%]  CUTTING строка 285/575  gage=[0.2–6.0]  len=[12001–13000]  t=47190 шагов Adam
+  [ 59.5%]  CUTTING строка 342/575  gage=[0.2–2.5]  len=[700–1000]  t=55694 шагов Adam
+  [ 69.4%]  CUTTING строка 399/575  gage=[2.8–40.0]  len=[201–400]  t=64092 шагов Adam
+  [ 79.3%]  CUTTING строка 456/575  gage=[4.5–60.0]  len=[801–900]  t=71853 шагов Adam
+  [ 89.2%]  CUTTING строка 513/575  gage=[0.0–0.0]  len=[9001–10000]  t=79884 шагов Adam
+  [ 99.1%]  CUTTING строка 570/575  gage=[0.0–40.0]  len=[9001–9250]  t=88168 шагов Adam
+  [100.0%]  CUTTING строка 575/575  gage=[6.1–103.0]  len=[1–59]  t=89013 шагов Adam
+
+  Инкрементальное обучение завершено. Всего шагов Adam: 89013
+  💾 Model saved → models\FA_Miscellaneos/model.pkl
+  ── FA Miscellaneos final check ──
+  Total rows          : 126
+  Passed (pred ≤ ref) :   90  (71.4%)
+  Passed (pred ≤ +5%) :  100  (79.4%)
+  Match (±2%)         :   12  (9.5%)
+  Failed              :   36  (28.6%)
+  Top-5 worst (over-predictions):
+    row_local= 77  ref=13.4580  pred=16.7804  diff=+3.3224  (+24.7%)
+    row_local= 42  ref=15.0000  pred=17.9425  diff=+2.9425  (+19.6%)
+    row_local= 65  ref=13.5510  pred=16.4832  diff=+2.9322  (+21.6%)
+    row_local= 64  ref=15.2110  pred=18.0923  diff=+2.8813  (+18.9%)
+    row_local= 82  ref=12.7230  pred=15.5960  diff=+2.8730  (+22.6%)
+
+  ══════════════════════════════════════════════════════════════════════
+                            📋  SESSION SUMMARY                          
+  ══════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  Sheet                          N      MAE     R²   Pass≤ref%   Pass≤+5%%        Status  │
+  ├──────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │  CUTTING                      575   3.3966 0.6297       47.0%       51.7%     ✅ trained  │
+  │  TOTAL values GCSD             14   4.1349 0.9360       42.9%       42.9%     ✅ trained  │
+  │  LEAD PREP                  75923   4.4933 0.9250       61.9%       67.7%     ✅ trained  │
+  │  LEAD PREP FA              131101  12.4787 0.6605       57.6%       57.6%     ✅ trained  │
+  │  High Voltage               37950  15.1677-0.1992       56.1%       57.6%     ✅ trained  │
+  │  FA Conns and wires         43141   4.8450 0.9365       42.9%       57.1%     ✅ trained  │
+  │  FA Taping                  31639   6.0590 0.8341       11.6%       17.4%     ✅ trained  │
+  │  FA Miscellaneos            54082  15.5561 0.2380       71.4%       79.4%     ✅ trained  │
+  └──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Средний MAE : 8.2664 мин
+  Средний R²  : 0.6201
+  Среднее Pass≤ref: 48.9%
+  Среднее Pass≤+5%: 53.9%
+
+  ✅  Обучение завершено.
+  ⏱  Всего: 211.0 сек
+  📁  Лог: logs/training.log
+  ══════════════════════════════════════════════════════════════════════
+
