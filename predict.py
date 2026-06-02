@@ -179,7 +179,7 @@ for idx, (_, row_data) in enumerate(df_cutting.iterrows()):
     # QTY: ставим 1 только если оригинальный QTY=0 (слот-строка)
     orig_qty = row_data['qty']
     if orig_qty == 0.0:
-        ws_cut.cell(row=excel_row, column=9).value = 1
+        ws_cut.cell(row=excel_row, column=9).value = int(1)
         ws_cut.cell(row=excel_row, column=9).number_format = '0'
 
     # TOTAL TIME = pred_gcsp (в J, 10-й столбец)
@@ -344,7 +344,8 @@ for sheet_name in GENERIC_SHEETS:
         if cur_qty and cur_qty <= len(row_cells):
             qcell = row_cells[cur_qty - 1]
             if isinstance(qcell.value, str) and qcell.value.startswith('='):
-                qcell.value = 0
+                qcell.value = int(0)
+                qcell.number_format = '0'
 
     row_pred_map = {int(rec['row_index']): {
         'pred': float(preds[idx_pos]),
@@ -370,7 +371,8 @@ for sheet_name in GENERIC_SHEETS:
             computed_qty = max(0.0, meta['pred'] / meta['gcsp']) if meta['gcsp'] > 0 else 0.0
             qcell = row_cells[qty_col_1 - 1]
             if _to_float(qcell.value) in (None, 0.0):
-                qcell.value = round(computed_qty, 4)
+                qcell.value = int(round(computed_qty))
+                qcell.number_format = '0'
                 qty_written += 1
 
     log(f'  ✅ Записано {written} TOTAL ячеек, {qty_written} QTY ячеек')
