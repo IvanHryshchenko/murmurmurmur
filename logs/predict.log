@@ -1,0 +1,403 @@
+
+  ══════════════════════════════════════════════════════════════════
+                        🔮  PREDICTION SESSION                       
+                    Started: 2026-05-25  11:13:17                   
+                         Input:  K0_old.xlsx                        
+                Output: results/RESULT_ALL_SHEETS.xlsx              
+  ══════════════════════════════════════════════════════════════════
+
+  ==================================================================
+  Sheet: TOTAL values GCSD
+  ==================================================================
+  Rows parsed from sheet : 17
+  Rows with known label  : 17
+  Rows to predict        : 0
+  ✅ AI model loaded — 17 predictions
+  Model quality (from training):
+    MAE=4.1344  RMSE=6.8122  R²=0.9072  MAPE=43.41%
+  Predictions (PLANT STANDARD, min): n=17  mean=15.538  std=15.951  min=3.780  max=48.110  p25=4.891  p75=19.735
+  ── Predictions vs known values ─────────────────────────────────────
+  MAE            : 4.1344 min
+  RMSE           : 6.8122 min
+  Median AE      : 1.9717 min
+  P95 AE         : 15.9246 min
+  MAPE           : 43.41 %
+  R²             : 0.9072
+  Distribution of predictions:
+        3.78–    8.21 │████████████████████████████████████████ 9
+        8.21–   12.65 │████████                                 2
+       12.65–   17.08 │                                         0
+       17.08–   21.51 │█████████████                            3
+       21.51–   25.94 │                                         0
+       25.94–   30.38 │                                         0
+       30.38–   34.81 │                                         0
+       34.81–   39.24 │                                         0
+       39.24–   43.68 │                                         0
+       43.68–   48.11 │█████████████                            3
+  ✅ Written 17 cells, SUM formulas E13/E23/M27 set
+
+  ==================================================================
+  Sheet: CUTTING
+  ==================================================================
+  Eligible rows total           : 577
+  Rows with TOTAL known (> 0)   : 31
+  Rows to predict (TOTAL = 0)   : 546
+  GCSP  — mean=10.919  std=17.708  min=0.610  max=129.300
+  QTY   — mean=0.305  std=2.057  zeros=546
+  ✅ AI model loaded — 577 predictions
+  Model quality (from training):
+    MAE=1.5609  RMSE=2.5148  R²=0.9588  MAPE=23.74%
+  All predictions (TOTAL, min): n=577  mean=8.456  std=18.249  min=0.000  max=121.148  p25=0.958  p75=4.788
+  Known TOTAL — mean=11.190  std=12.391  min=0.970  max=55.410
+  ── Predictions vs known TOTAL (self-check) ─────────────────────────────────────
+  MAE            : 1.5609 min
+  RMSE           : 2.5148 min
+  Median AE      : 1.1188 min
+  P95 AE         : 4.4673 min
+  MAPE           : 23.74 %
+  R²             : 0.9588
+  New predictions (was 0): n=546  mean=8.321  std=18.599  min=0.000  max=121.148  p25=0.917  p75=4.156
+  Distribution of predictions:
+        0.00–   15.14 │████████████████████████████████████████ 473
+       15.14–   30.29 │██                                       27
+       30.29–   45.43 │█                                        19
+       45.43–   60.57 │                                         7
+       60.57–   75.72 │                                         6
+       75.72–   90.86 │                                         6
+       90.86–  106.00 │                                         5
+      106.00–  121.15 │                                         3
+  ✅ Pass 1: cleared 677 formula cells
+  ✅ Pass 2: written 577 TOTAL cells, 546 QTY cells back-computed
+
+  ==================================================================
+  Sheet: LEAD PREP
+  ==================================================================
+  Eligible rows total           : 155
+  Rows with TOTAL known (> 0)   : 23
+  Rows to predict (TOTAL = 0)   : 132
+  GCSP  — mean=18.634  std=27.521  min=0.010  max=225.000
+  QTY   — mean=1.019  std=4.931  zeros=132
+  ✅ AI model loaded — 155 predictions
+  Model quality (from training):
+    MAE=6.2267  RMSE=9.9132  R²=0.9653  MAPE=38.21%
+  All predictions (TOTAL, min): n=155  mean=33411575.854  std=76190067.723  min=0.000  max=207151676.701  p25=1.736  p75=55.909
+  Known TOTAL — mean=47.334  std=53.238  min=2.973  max=200.000
+  ── Predictions vs known TOTAL (self-check) ─────────────────────────────────────
+  MAE            : 6.2267 min
+  RMSE           : 9.9132 min
+  Median AE      : 4.1766 min
+  P95 AE         : 26.9431 min
+  MAPE           : 38.21 %
+  R²             : 0.9653
+  New predictions (was 0): n=132  mean=39233282.069  std=81166412.319  min=0.000  max=207151676.701  p25=0.730  p75=55.176
+  Distribution of predictions:
+        0.00–25893959.59 │████████████████████████████████████████ 107
+    25893959.59–51787919.18 │                                         0
+    51787919.18–77681878.76 │                                         0
+    77681878.76–103575838.35 │                                         0
+    103575838.35–129469797.94 │                                         0
+    129469797.94–155363757.53 │                                         0
+    155363757.53–181257717.11 │                                         0
+    181257717.11–207151676.70 │█████████                                25
+  ✅ Pass 1: cleared 248 formula cells
+  ✅ Pass 2: written 155 TOTAL cells, 132 QTY cells back-computed
+
+  ==================================================================
+  Sheet: LEAD PREP FA
+  ==================================================================
+  Eligible rows total           : 229
+  Rows with TOTAL known (> 0)   : 1
+  Rows to predict (TOTAL = 0)   : 228
+  GCSP  — mean=19.784  std=33.383  min=0.010  max=319.580
+  QTY   — mean=0.052  std=0.793  zeros=228
+  ⚠️  No model — fallback (median ratio=12.000) | 229 predictions
+  All predictions (TOTAL, min): n=229  mean=237.414  std=399.714  min=0.120  max=3834.960  p25=60.000  p75=258.336
+  Known TOTAL — mean=48.000  std=0.000  min=48.000  max=48.000
+  ── Predictions vs known TOTAL (self-check) ─────────────────────────────────────
+  MAE            : 0.0000 min
+  RMSE           : 0.0000 min
+  Median AE      : 0.0000 min
+  P95 AE         : 0.0000 min
+  MAPE           : 0.00 %
+  R²             : 1.0000
+  New predictions (was 0): n=228  mean=238.244  std=400.393  min=0.120  max=3834.960  p25=60.480  p75=259.752
+  Distribution of predictions:
+        0.12–  479.48 │████████████████████████████████████████ 205
+      479.48–  958.83 │███                                      16
+      958.83– 1438.18 │                                         3
+     1438.18– 1917.54 │                                         0
+     1917.54– 2396.89 │                                         2
+     2396.89– 2876.25 │                                         1
+     2876.25– 3355.61 │                                         0
+     3355.61– 3834.96 │                                         1
+  ✅ Pass 1: cleared 245 formula cells
+  ✅ Pass 2: written 229 TOTAL cells, 228 QTY cells back-computed
+
+  ==================================================================
+  Sheet: High Voltage
+  ==================================================================
+  Eligible rows total           : 66
+  Rows with TOTAL known (> 0)   : 0
+  Rows to predict (TOTAL = 0)   : 66
+  GCSP  — mean=22.324  std=24.580  min=0.150  max=127.000
+  QTY   — mean=0.000  std=0.000  zeros=66
+  ⚠️  No model — fallback (median ratio=1.000) | 66 predictions
+  All predictions (TOTAL, min): n=66  mean=22.324  std=24.394  min=0.150  max=127.000  p25=8.000  p75=27.500
+  New predictions (was 0): n=66  mean=22.324  std=24.394  min=0.150  max=127.000  p25=8.000  p75=27.500
+  Distribution of predictions:
+        0.15–   16.01 │████████████████████████████████████████ 38
+       16.01–   31.86 │█████████████                            13
+       31.86–   47.72 │█████████                                9
+       47.72–   63.57 │█                                        1
+       63.57–   79.43 │██                                       2
+       79.43–   95.29 │█                                        1
+       95.29–  111.14 │█                                        1
+      111.14–  127.00 │█                                        1
+  ✅ Pass 1: cleared 68 formula cells
+  ✅ Pass 2: written 66 TOTAL cells, 66 QTY cells back-computed
+
+  ==================================================================
+  Sheet: FA Conns and wires
+  ==================================================================
+  Eligible rows total           : 91
+  Rows with TOTAL known (> 0)   : 16
+  Rows to predict (TOTAL = 0)   : 75
+  GCSP  — mean=13.945  std=12.635  min=0.112  max=59.865
+  QTY   — mean=6.000  std=18.144  zeros=75
+  ✅ AI model loaded — 91 predictions
+  Model quality (from training):
+    MAE=15.6914  RMSE=24.4066  R²=0.9468  MAPE=40.31%
+  All predictions (TOTAL, min): n=91  mean=15.842  std=48.615  min=0.000  max=313.533  p25=0.000  p75=0.000
+  Known TOTAL — mean=93.596  std=105.843  min=5.220  max=356.000
+  ── Predictions vs known TOTAL (self-check) ─────────────────────────────────────
+  MAE            : 15.6914 min
+  RMSE           : 24.4066 min
+  Median AE      : 9.2871 min
+  P95 AE         : 53.5544 min
+  MAPE           : 40.31 %
+  R²             : 0.9468
+  New predictions (was 0): n=75  mean=0.609  std=2.169  min=0.000  max=10.825  p25=0.000  p75=0.000
+  Distribution of predictions:
+        0.00–    1.35 │████████████████████████████████████████ 69
+        1.35–    2.71 │                                         0
+        2.71–    4.06 │                                         0
+        4.06–    5.41 │█                                        2
+        5.41–    6.77 │                                         0
+        6.77–    8.12 │█                                        2
+        8.12–    9.47 │                                         0
+        9.47–   10.82 │█                                        2
+  ✅ Pass 1: cleared 98 formula cells
+  ✅ Pass 2: written 91 TOTAL cells, 75 QTY cells back-computed
+
+  ==================================================================
+  Sheet: FA Taping
+  ==================================================================
+  Eligible rows total           : 69
+  Rows with TOTAL known (> 0)   : 14
+  Rows to predict (TOTAL = 0)   : 55
+  GCSP  — mean=2.358  std=3.296  min=0.009  max=12.800
+  QTY   — mean=27.391  std=133.133  zeros=55
+  ✅ AI model loaded — 69 predictions
+  Model quality (from training):
+    MAE=13.8062  RMSE=21.8415  R²=0.9800  MAPE=106.74%
+  All predictions (TOTAL, min): n=69  mean=17.648  std=68.558  min=0.000  max=558.504  p25=0.000  p75=13.192
+  Known TOTAL — mean=72.280  std=154.290  min=3.216  max=616.000
+  ── Predictions vs known TOTAL (self-check) ─────────────────────────────────────
+  MAE            : 13.8062 min
+  RMSE           : 21.8415 min
+  Median AE      : 7.5585 min
+  P95 AE         : 50.5663 min
+  MAPE           : 106.74 %
+  R²             : 0.9800
+  New predictions (was 0): n=55  mean=2.559  std=5.542  min=0.000  max=22.133  p25=0.000  p75=3.322
+  Distribution of predictions:
+        0.00–    2.77 │████████████████████████████████████████ 40
+        2.77–    5.53 │█████████                                9
+        5.53–    8.30 │█                                        1
+        8.30–   11.07 │                                         0
+       11.07–   13.83 │                                         0
+       13.83–   16.60 │█                                        1
+       16.60–   19.37 │██                                       2
+       19.37–   22.13 │██                                       2
+  ✅ Pass 1: cleared 70 formula cells
+  ✅ Pass 2: written 69 TOTAL cells, 55 QTY cells back-computed
+
+  ==================================================================
+  Sheet: FA Miscellaneos
+  ==================================================================
+  Eligible rows total           : 126
+  Rows with TOTAL known (> 0)   : 32
+  Rows to predict (TOTAL = 0)   : 94
+  GCSP  — mean=22.731  std=115.759  min=0.003  max=1290.600
+  QTY   — mean=89.746  std=558.556  zeros=94
+  ✅ AI model loaded — 126 predictions
+  Model quality (from training):
+    MAE=8.8642  RMSE=16.8068  R²=0.9467  MAPE=40.49%
+  All predictions (TOTAL, min): n=126  mean=15.985  std=35.411  min=0.000  max=304.487  p25=2.698  p75=10.929
+  Known TOTAL — mean=49.621  std=72.794  min=2.800  max=368.000
+  ── Predictions vs known TOTAL (self-check) ─────────────────────────────────────
+  MAE            : 8.8642 min
+  RMSE           : 16.8068 min
+  Median AE      : 3.7856 min
+  P95 AE         : 41.8760 min
+  MAPE           : 40.49 %
+  R²             : 0.9467
+  New predictions (was 0): n=94  mean=6.279  std=10.682  min=0.000  max=61.585  p25=2.092  p75=4.563
+  Distribution of predictions:
+        0.00–    7.70 │████████████████████████████████████████ 83
+        7.70–   15.40 │                                         2
+       15.40–   23.09 │                                         0
+       23.09–   30.79 │█                                        4
+       30.79–   38.49 │█                                        3
+       38.49–   46.19 │                                         0
+       46.19–   53.89 │                                         1
+       53.89–   61.58 │                                         1
+  ✅ Pass 1: cleared 126 formula cells
+  ✅ Pass 2: written 126 TOTAL cells, 94 QTY cells back-computed
+
+  ══════════════════════════════════════════════════════════════════
+                    📋  PREDICTION SESSION SUMMARY                   
+  ══════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────────────────────────────────────────────────────────────────┐
+  │  Sheet                        Rows  Written    Method Mean(min)  Std(min)  │
+  ├──────────────────────────────────────────────────────────────────────────────────────┤
+  │  TOTAL values GCSD              17       17        AI    15.538    15.951  │
+  │  CUTTING                       577      577        AI     8.456    18.249  │
+  │  LEAD PREP                     155      155        AI33411575.85476190067.723  │
+  │  LEAD PREP FA                  229      229  fallback   237.414   399.714  │
+  │  High Voltage                   66       66  fallback    22.324    24.394  │
+  │  FA Conns and wires             91       91        AI    15.842    48.615  │
+  │  FA Taping                      69       69        AI    17.648    68.558  │
+  │  FA Miscellaneos               126      126        AI    15.985    35.411  │
+  └──────────────────────────────────────────────────────────────────────────────────────┘
+
+  Total cells written    : 1330
+  Sheets via AI model    : 6
+  Sheets via fallback    : 2
+  Output file            : results\RESULT_ALL_SHEETS.xlsx
+  Sheets in workbook     : TOTAL values GCSD, CUTTING, LEAD PREP, LEAD PREP FA, High Voltage, FA Conns and wires, FA Taping, FA Miscellaneos
+  ⏱  Elapsed             : 2.8 sec
+  📁  Log saved           : logs/predict.log
+  ══════════════════════════════════════════════════════════════════
+
+
+  ══════════════════════════════════════════════════════════════════════
+               🔮  PREDICTION SESSION (Wire-by-Wire Concept)             
+                      Started: 2026-05-28  00:13:23                     
+                           Input:  K0_old.xlsx                          
+                  Output: results/RESULT_ALL_SHEETS.xlsx                
+  ══════════════════════════════════════════════════════════════════════
+
+  ======================================================================
+  Sheet: CUTTING  (Wire-by-Wire Prediction)
+  ======================================================================
+
+  Алгоритм:
+    1. Перебираем строки I3..I681 по одной.
+    2. Подставляем QTY=1 → активируем строку.
+    3. Нейросеть предсказывает GCSP по [MinGage, MaxGage, MinLen, MaxLen].
+    4. TOTAL TIME = pred_gcsp * 1.
+    5. Проверяем: pred ≤ table_gcsp (pass/fail).
+
+  Строк для обработки: 575
+  ✅ AI модель загружена — 575 предсказаний
+  Качество модели (из обучения):
+    MAE=3.2069  RMSE=6.8327  R²=0.8382  MAPE=65.87%
+
+  ── Wire-by-Wire Pass/Fail Report ──
+  Всего строк    : 575
+  Pass (pred ≤ ref):  217  (37.7%)
+  Fail (pred > ref):  358  (62.3%)
+
+  Детали (первые 10 строк):
+   Excel   MinG   MaxG    MinL    MaxL  GCSP_ref GCSP_pred   Pass
+  --------------------------------------------------------------------
+       3   0.30   5.00      50    1000    1.2301    3.7529      ❌
+       4   0.30   5.00    1001    1500    1.7051    4.6367      ❌
+       5   0.30   5.00    1501    2000    2.2101    4.4737      ❌
+       6   0.30   5.00    2001    2500    2.7451    4.3277      ❌
+       7   0.30   5.00    2501    3000    3.3101    4.3534      ❌
+       8   0.30   5.00    3001    3500    3.9051    4.5475      ❌
+       9   0.30   5.00    3501    4000    4.5301    4.7651      ❌
+      10   0.30   5.00    4001    4500    5.1851    4.8270      ✅
+      11   0.30   5.00    4501    5000    5.8701    4.9257      ✅
+      12   0.30   5.00    5001    5500    6.5851    5.2435      ✅
+  ...
+     668   0.00  40.00    9751   10000   16.2800   15.7514      ✅
+     675   0.00   6.00       1      59    1.1200    3.1104      ❌
+     676   6.10 103.00       1      59    3.3400    3.6427      ❌
+
+  ✅ Записано 575 строк (QTY=1 в I, pred_GCSP в J)
+
+  ======================================================================
+  Sheet: TOTAL values GCSD
+  ======================================================================
+  ✅ AI модель загружена — 14 предсказаний
+  Pass (pred ≤ ref): 5/14 (35.7%)
+  ✅ Записано 14 ячеек, SUM формулы E13/E23/M27 установлены
+
+  ======================================================================
+  Sheet: LEAD PREP
+  ======================================================================
+  ✅ AI модель загружена — 155 предсказаний
+  Pass (pred ≤ ref): 10/23 (43.5%)
+  ✅ Записано 155 TOTAL ячеек, 132 QTY ячеек
+
+  ======================================================================
+  Sheet: LEAD PREP FA
+  ======================================================================
+  ⚠️  Нет модели — fallback
+  Pass (pred ≤ ref): 1/1 (100.0%)
+  ✅ Записано 229 TOTAL ячеек, 228 QTY ячеек
+
+  ======================================================================
+  Sheet: High Voltage
+  ======================================================================
+  ⚠️  Нет модели — fallback
+  ✅ Записано 66 TOTAL ячеек, 66 QTY ячеек
+
+  ======================================================================
+  Sheet: FA Conns and wires
+  ======================================================================
+  ✅ AI модель загружена — 91 предсказаний
+  Pass (pred ≤ ref): 7/16 (43.8%)
+  ✅ Записано 91 TOTAL ячеек, 75 QTY ячеек
+
+  ======================================================================
+  Sheet: FA Taping
+  ======================================================================
+  ✅ AI модель загружена — 69 предсказаний
+  Pass (pred ≤ ref): 4/14 (28.6%)
+  ✅ Записано 69 TOTAL ячеек, 55 QTY ячеек
+
+  ======================================================================
+  Sheet: FA Miscellaneos
+  ======================================================================
+  ✅ AI модель загружена — 126 предсказаний
+  Pass (pred ≤ ref): 12/32 (37.5%)
+  ✅ Записано 126 TOTAL ячеек, 94 QTY ячеек
+
+  ══════════════════════════════════════════════════════════════════════
+                      📋  PREDICTION SESSION SUMMARY                     
+  ══════════════════════════════════════════════════════════════════════
+
+  ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+  │  Sheet                     Rows Written    Method     Pass%      Mean       Std  │
+  ├──────────────────────────────────────────────────────────────────────────────────────────────┤
+  │  CUTTING                    575     575        AI      37.7    10.356    13.381  │
+  │  TOTAL values GCSD           14      14        AI      35.7    18.919    18.961  │
+  │  LEAD PREP                  155     155        AI      43.515997006.27936478738.709  │
+  │  LEAD PREP FA               229     229  fallback     100.0   237.414   399.714  │
+  │  High Voltage                66      66  fallback       0.0    22.324    24.394  │
+  │  FA Conns and wires          91      91        AI      43.822589696.21436703876.963  │
+  │  FA Taping                   69      69        AI      28.6    16.045    63.966  │
+  │  FA Miscellaneos            126     126        AI      37.5    17.280    37.605  │
+  └──────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  Записано всего ячеек   : 1325
+  Выходной файл          : results\RESULT_ALL_SHEETS.xlsx
+  ⏱  Время               : 11.9 сек
+  📁  Лог                 : logs/predict.log
+  ══════════════════════════════════════════════════════════════════════
+
