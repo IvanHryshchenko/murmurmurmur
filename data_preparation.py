@@ -1,24 +1,3 @@
-"""
-data_preparation.py
--------------------
-Парсинг всех листов K0_old.xlsx.
-
-Ключевое изменение (концепт заказчика):
-  Лист CUTTING — строки I3:I681 — это "TOTAL Qty Leads".
-  Каждая строка — самостоятельная операция с параметрами:
-    Min Gage, Max Gage, Min Length, Max Length, Global Sec/Pc (GCSP).
-  
-  Нейросеть учится ПРЕДСКАЗЫВАТЬ Global Sec/Pc (время на операцию)
-  по параметрам Min/Max Gage и Min/Max Length + группа машины.
-  
-  При обучении/предсказании QTY=1 подставляется в каждую строку по очереди
-  (I3=1, I4=1, ..., I681=1), чтобы активировать строку и получить
-  предсказание TOTAL TIME = GCSP * QTY = GCSP * 1 = GCSP.
-
-  Цель: предсказанное GCSP должно совпасть или быть чуть меньше эталонного
-  табличного значения.
-"""
-
 import re
 import numpy as np
 import pandas as pd
@@ -76,22 +55,6 @@ def _gcsd_skip(label):
 # ─── CUTTING: ПОСТРОЧНЫЙ РАЗБОР С ПАРАМЕТРАМИ ПРОВОДА ────────────────────────
 
 def load_cutting_sheet(file_path, sheet_name='CUTTING'):
-    """
-    Разбирает лист CUTTING.
-
-    Структура листа:
-      Row 2 — заголовок: Comments | MachineVendor | Machine |
-               Min Gage | Max Gage | Min Length | Max Length |
-               Global Sec/Pc | TOTAL Qty Leads | SUB TOTAL | Qty Marked | TOTAL TIME
-      Row 3..681 — данные по операциям/проводам
-
-    Возвращает DataFrame со столбцами:
-      row_index, min_gage, max_gage, min_len, max_len,
-      gcsp (=Global Sec/Pc = эталонное время/шт),
-      qty  (=TOTAL Qty Leads, обычно None в шаблоне),
-      machine_group (название группы из столбца Comments),
-      excel_row (1-based номер строки в Excel)
-    """
     wb = load_workbook(file_path, read_only=True, data_only=True)
     ws = wb[sheet_name]
     rows_data = list(ws.iter_rows(min_row=1, values_only=True))
@@ -159,11 +122,6 @@ def load_cutting_sheet(file_path, sheet_name='CUTTING'):
 
 
 def _encode_machine_group(df_cutting, df_target=None):
-    """
-    Target-encoding группы машины по среднему log(GCSP).
-    Возвращает (encoded_series_for_cutting, mapping_dict).
-    Если df_target=None — кодируем сам df_cutting (для обучения).
-    """
     log_gcsp = np.log1p(df_cutting['gcsp'])
     mean_per_group = log_gcsp.groupby(df_cutting['machine_group']).mean()
     global_mean = float(log_gcsp.mean())
@@ -178,15 +136,6 @@ def _encode_machine_group(df_cutting, df_target=None):
 
 
 def create_cutting_features(df, group_mapping=None, group_global_mean=None):
-    """
-    Инжиниринг признаков для листа CUTTING.
-
-    Входные признаки (что знаем о проводе/операции):
-      min_gage, max_gage, min_len, max_len + machine_group (target-encoded)
-    Целевая переменная: gcsp (Global Sec/Pc)
-
-    При подстановке QTY=1:  TOTAL_TIME = gcsp * 1 = gcsp
-    """
     df = df.copy()
 
     # Основные диапазоны
