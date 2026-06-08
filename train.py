@@ -1,109 +1,68 @@
 """
-train.py — Обучение нейросети по концепту заказчика
------------------------------------------------------
+train.py — Обучение нейросети предсказывать «лучший провод»
+------------------------------------------------------------
 
-КОНЦЕПТ (Кирилл Шилохвостов):
-  Лист CUTTING, строки I3..I681 — TOTAL Qty Leads.
+КОНЦЕПЦИЯ:
+  Для каждой строки CUTTING считаем детальный score:
+    score = кол-во операций LEAD PREP + кол-во операций LEAD PREP FA
+            + кол-во операций High Voltage, которые провод проходит по gage/length.
   
-  Алгоритм обучения:
-    1. Берём строку i (начиная с I3).
-    2. Подставляем QTY=1 → активируем эту строку.
-    3. Для этой строки известны: Min Gage, Max Gage, Min Length, Max Length,
-       machine_group, GCSP.
-    4. TOTAL TIME = GCSP * 1 = GCSP.
-    5. Обучаем нейросеть предсказывать GCSP.
-    6. Проверяем: предсказание ≤ табличное GCSP.
-    7. Переходим к следующей строке.
+  Это богатый target (диапазон ~332–382) — нейросеть учится предсказывать
+  этот score по параметрам провода (gage, length, machine_group, gcsp).
   
-  ИЗМЕНЕНИЯ v3:
-    - machine_group добавлен в признаки CUTTING (target-encoding)
-    - Исправлен баг дропаута (детерминированный seed → настоящий случайный)
-    - Исправлен баг backward на выходном слое
-    - sample_weight для real_rows увеличен до 50.0
-    - Cosine LR decay в partial_fit
-    - group_mapping сохраняется в модели для корректного predict
+  Лучший провод = max(predicted_score), при равенстве — min(gcsp).
+  
+  Аугментация: добавляем Gaussian noise к фичам для увеличения выборки,
+  взвешиваем провода с высоким score выше.
 """
 
 import os
 import datetime
 import numpy as np
-import pandas as _pd
 
 from data_preparation import (
-    GENERIC_SHEETS,
-    FEATURE_COLS,
-    FEATURE_COLS_TOTAL_GCSD,
-    FEATURE_COLS_CUTTING,
-    FEATURE_COLS_AUGMENTED,
     load_cutting_sheet,
+    load_all_filters,
+    compute_detailed_score,
     create_cutting_features,
-    load_sheet_dynamic,
-    create_features,
+    _encode_machine_group,
+    FEATURE_COLS_CUTTING,
     load_and_prepare_total_gcsd,
     create_features_total_gcsd,
-    build_augmented_dataset,
-    create_features_augmented,
-    _encode_machine_group,
+    FEATURE_COLS_TOTAL_GCSD,
+    GENERIC_SHEETS,
+    SIMPLE_QTY_SHEETS,
+    load_sheet_dynamic,
 )
 from model import MiniAI, log
 
 FILE_PATH   = 'K0_old.xlsx'
 MODELS_DIR  = 'models'
-MIN_SAMPLES  = 5
-MIN_REAL_ROWS = 3
-
-# Вес реальных строк vs синтетических в generic-листах
-REAL_ROW_WEIGHT = 50.0
+MIN_SAMPLES = 5
 
 
 def safe_name(s):
     return s.replace(' ', '_').replace('/', '_').replace('\n', '_')
 
 
-def train_and_save(sheet_name, X, y, feature_cols, epochs=2000, sample_weight=None):
+def train_and_save(sheet_name, X, y, feature_cols, epochs=3000, sample_weight=None):
     model_dir = os.path.join(MODELS_DIR, safe_name(sheet_name))
     os.makedirs(model_dir, exist_ok=True)
 
-    ai = MiniAI(input_size=len(feature_cols), epochs=epochs, lr=0.001,
-                log_target=True, batch_size=2048, patience=300)
+    ai = MiniAI(
+        input_size=len(feature_cols),
+        hidden=(128, 64, 32),     # глубже — больше мощности
+        epochs=epochs,
+        lr=0.001,
+        log_target=False,         # score уже в линейном масштабе
+        batch_size=512,
+        patience=500,
+        dropout=0.1,
+    )
     ai.fit(X, y, feature_cols, verbose=True, sample_weight=sample_weight)
     ai.save(os.path.join(model_dir, 'model.pkl'))
-    log(f'  💾 Model saved → {model_dir}/model.pkl')
+    log(f'  💾 Модель сохранена → {model_dir}/model.pkl')
     return ai
-
-
-def _pass_fail_report(y_true, y_pred, label='Wire-by-wire pass/fail'):
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
-
-    passed_strict = (y_pred <= y_true)
-    passed_5pct   = (y_pred <= y_true * 1.05)
-    passed_match  = (np.abs(y_pred - y_true) / (np.abs(y_true) + 1e-8) < 0.02)
-
-    n = len(y_true)
-    log(f'  ── {label} ──')
-    log(f'  Total rows          : {n}')
-    log(f'  Passed (pred ≤ ref) : {passed_strict.sum():4d}  ({passed_strict.mean()*100:.1f}%)')
-    log(f'  Passed (pred ≤ +5%) : {passed_5pct.sum():4d}  ({passed_5pct.mean()*100:.1f}%)')
-    log(f'  Match (±2%)         : {passed_match.sum():4d}  ({passed_match.mean()*100:.1f}%)')
-    log(f'  Failed              : {(~passed_strict).sum():4d}  ({(~passed_strict).mean()*100:.1f}%)')
-
-    over = y_pred - y_true
-    worst_idx = np.argsort(over)[::-1][:5]
-    log(f'  Top-5 worst (over-predictions):')
-    for idx in worst_idx:
-        if over[idx] > 0:
-            log(f'    row_local={idx:3d}  ref={y_true[idx]:.4f}  pred={y_pred[idx]:.4f}'
-                f'  diff={over[idx]:+.4f}  ({over[idx]/y_true[idx]*100:+.1f}%)')
-
-    return {
-        'n': n,
-        'pass_strict': int(passed_strict.sum()),
-        'pass_strict_pct': float(passed_strict.mean() * 100),
-        'pass_5pct': int(passed_5pct.sum()),
-        'pass_5pct_pct': float(passed_5pct.mean() * 100),
-        'match_pct': float(passed_match.mean() * 100),
-    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -113,7 +72,7 @@ W = 70
 
 log()
 log('  ' + '═' * W)
-log(f'  {"🚀  TRAINING SESSION (Wire-by-Wire Concept)":^{W}}')
+log(f'  {"🚀  TRAINING — Best Wire Predictor (Detailed Score)":^{W}}')
 log(f'  {"Started: " + session_start.strftime("%Y-%m-%d  %H:%M:%S"):^{W}}')
 log(f'  {"File: " + FILE_PATH:^{W}}')
 log('  ' + '═' * W)
@@ -121,78 +80,177 @@ log('  ' + '═' * W)
 all_results = []
 
 
-# ─── 1. CUTTING ────────────────────────────────────────────────────────────────
+# ─── 1. CUTTING — главная модель ──────────────────────────────────────────────
 
 log()
 log('  ' + '=' * W)
-log('  Sheet: CUTTING  (Wire-by-Wire Training)')
+log('  CUTTING  — обучение предсказывать детальный score')
 log('  ' + '=' * W)
 log()
-log('  Концепт: каждая строка I3..I681 — отдельный провод/операция.')
-log('  Подставляем QTY=1, цель = Global Sec/Pc (время на шт).')
-log('  Признаки: Min Gage, Max Gage, Min Length, Max Length + machine_group (target-encoded).')
+log('  Концепт: target = сумма пройденных операций по всем трём пространствам.')
+log('  (LEAD PREP + LEAD PREP FA + High Voltage — каждая строка = одна операция)')
+log('  Нейросеть предсказывает этот score → лучший провод = max(predicted_score).')
 log()
 
 df_cutting = load_cutting_sheet(FILE_PATH, 'CUTTING')
-log(f'  Строк с валидными параметрами (GCSP > 0): {len(df_cutting)}')
+log(f'  Строк в CUTTING: {len(df_cutting)}')
 
-if len(df_cutting) >= MIN_SAMPLES:
-    # Вычисляем target-encoding групп машин на всём CUTTING датасете
-    _, group_mapping, group_global_mean = _encode_machine_group(df_cutting)
+log()
+log('  Загрузка фильтров операций...')
+filters_dict = load_all_filters(FILE_PATH)
 
-    df_feat = create_cutting_features(df_cutting, group_mapping, group_global_mean)
+total_ops = sum(len(v) for v in filters_dict.values())
+log(f'  Итого операций с ограничениями: {total_ops}')
+log()
 
-    X = df_feat[FEATURE_COLS_CUTTING].values
-    y = df_cutting['gcsp'].values   # Target: Global Sec/Pc
+# ─── Вычисляем target для каждого провода ────────────────────────────────────
 
-    log(f'  GCSP — mean={y.mean():.4f}  std={y.std():.4f}'
-        f'  min={y.min():.4f}  max={y.max():.4f}')
-    log(f'  Групп машин: {df_cutting["machine_group"].nunique()}  (target-encoded в group_encoded)')
-    log()
+log('  Вычисление score для каждого провода...')
+scores_total = []
+scores_lp    = []
+scores_lpfa  = []
+scores_hv    = []
 
-    # Показываем первые N строк с QTY=1
-    log('  Пример активации строк (QTY=1):')
-    for _, r in df_cutting.head(5).iterrows():
-        total_time = r['gcsp'] * 1  # QTY=1
-        log(f'    Строка {int(r["excel_row"]):3d} | '
-            f'Gage [{r["min_gage"]:.1f}–{r["max_gage"]:.1f}] | '
-            f'Len [{r["min_len"]:.0f}–{r["max_len"]:.0f}] | '
-            f'GCSP={r["gcsp"]:.4f} → TOTAL TIME = {total_time:.4f} мин')
-    log()
+for _, w in df_cutting.iterrows():
+    mid_g = (w['min_gage'] + w['max_gage']) / 2.0
+    mid_l = (w['min_len']  + w['max_len'])  / 2.0
+    total, s_lp, s_lpfa, s_hv = compute_detailed_score(mid_g, mid_l, filters_dict)
+    scores_total.append(total)
+    scores_lp.append(s_lp)
+    scores_lpfa.append(s_lpfa)
+    scores_hv.append(s_hv)
 
-    ai_cutting = train_and_save(
-        'CUTTING',
-        X, y,
-        FEATURE_COLS_CUTTING,
-        epochs=3000,
-    )
-    # Сохраняем group_mapping в модели для использования в predict
-    ai_cutting.group_mapping     = group_mapping
-    ai_cutting.group_global_mean = group_global_mean
-    ai_cutting.save(os.path.join(MODELS_DIR, 'CUTTING', 'model.pkl'))
+y_scores = np.array(scores_total, dtype=float)
+y_lp     = np.array(scores_lp,    dtype=float)
+y_lpfa   = np.array(scores_lpfa,  dtype=float)
+y_hv     = np.array(scores_hv,    dtype=float)
 
-    # Pass/fail проверка
-    preds_all = ai_cutting.predict(X)
-    pf = _pass_fail_report(y, preds_all, 'CUTTING wire-by-wire check')
+log()
+log('  Статистика target (детальный score):')
+log(f'    Диапазон: {y_scores.min():.0f} – {y_scores.max():.0f}')
+log(f'    Среднее:  {y_scores.mean():.1f}  ±  {y_scores.std():.1f}')
+log(f'    LP:   min={y_lp.min():.0f} max={y_lp.max():.0f} mean={y_lp.mean():.1f}')
+log(f'    LPFA: min={y_lpfa.min():.0f} max={y_lpfa.max():.0f} mean={y_lpfa.mean():.1f}')
+log(f'    HV:   min={y_hv.min():.0f} max={y_hv.max():.0f} mean={y_hv.mean():.1f}')
+log()
 
-    m = ai_cutting.history['metrics_all']
-    all_results.append({
-        'sheet':          'CUTTING',
-        'n':              len(df_cutting),
-        'mae':            m['mae'],
-        'r2':             m['r2'],
-        'pass_strict_pct': pf['pass_strict_pct'],
-        'pass_5pct_pct':  pf['pass_5pct_pct'],
-        'status':         '✅ trained',
-    })
-else:
-    group_mapping = {}
-    group_global_mean = 0.0
-    log(f'  ⚠️  Недостаточно данных ({len(df_cutting)} строк, нужно {MIN_SAMPLES}), пропуск.')
-    all_results.append({'sheet': 'CUTTING', 'n': len(df_cutting),
-                        'mae': None, 'r2': None,
-                        'pass_strict_pct': None, 'pass_5pct_pct': None,
-                        'status': '⚠️  skipped'})
+# Распределение
+n_bins = 10
+bin_edges = np.linspace(y_scores.min(), y_scores.max(), n_bins + 1)
+log('  Распределение score:')
+for i in range(n_bins):
+    lo_b, hi_b = bin_edges[i], bin_edges[i+1]
+    cnt = ((y_scores >= lo_b) & (y_scores < hi_b + 0.001)).sum()
+    bar = '█' * int(cnt / len(y_scores) * 40)
+    log(f'    [{lo_b:5.0f}–{hi_b:5.0f}]: {cnt:4d}  {bar}')
+log()
+
+# ─── Фичи + аугментация ──────────────────────────────────────────────────────
+
+_, group_mapping, group_global_mean = _encode_machine_group(df_cutting)
+df_feat = create_cutting_features(df_cutting, group_mapping, group_global_mean)
+X_orig = df_feat[FEATURE_COLS_CUTTING].values
+
+# Аугментация: добавляем шум для обобщения (у нас 575 строк — маловато)
+rng = np.random.default_rng(42)
+N_AUG = 15  # сколько раз дублируем с шумом
+aug_X_list = [X_orig]
+aug_y_list = [y_scores]
+
+for _ in range(N_AUG):
+    noise = rng.normal(0, 0.02, X_orig.shape)  # 2% шума
+    X_noisy = X_orig + X_orig * noise
+    aug_X_list.append(X_noisy)
+    aug_y_list.append(y_scores)
+
+X = np.vstack(aug_X_list)
+y = np.concatenate(aug_y_list)
+
+log(f'  Обучающая выборка после аугментации: {len(X)} строк')
+log(f'  (оригинал: {len(X_orig)}, ×{N_AUG + 1} с Gaussian noise 2%)')
+log()
+
+# Взвешиваем: провода с высоким score важнее
+y_norm = (y - y.min()) / (y.max() - y.min() + 1e-8)
+sample_weight = 1.0 + 4.0 * y_norm  # вес от 1 до 5
+
+log(f'  Веса обучающих примеров: min={sample_weight.min():.2f} max={sample_weight.max():.2f}')
+log()
+
+# ─── Обучение ─────────────────────────────────────────────────────────────────
+
+ai_cutting = train_and_save(
+    'CUTTING', X, y,
+    FEATURE_COLS_CUTTING,
+    epochs=5000,
+    sample_weight=sample_weight,
+)
+
+# Сохраняем вспомогательные данные
+ai_cutting.group_mapping      = group_mapping
+ai_cutting.group_global_mean  = group_global_mean
+ai_cutting.filters_dict       = filters_dict
+ai_cutting.df_cutting_meta    = df_cutting[['excel_row', 'machine_group',
+                                            'min_gage', 'max_gage',
+                                            'min_len',  'max_len',
+                                            'gcsp']].reset_index(drop=True)
+ai_cutting.save(os.path.join(MODELS_DIR, 'CUTTING', 'model.pkl'))
+
+# Проверка на оригинальных данных
+preds_orig = ai_cutting.predict(X_orig)
+ranking = preds_orig * 10000.0 - df_cutting['gcsp'].values
+best_idx = int(np.argmax(ranking))
+best_row = df_cutting.iloc[best_idx]
+real_score = int(y_scores[best_idx])
+
+log()
+log('  ─── Результат на обучающей выборке ───')
+log()
+log('  🏆  ЛУЧШИЙ ПРОВОД (предсказание нейросети):')
+log(f'    Excel-строка : {int(best_row["excel_row"])}')
+log(f'    Группа       : {best_row["machine_group"]}')
+log(f'    Gage         : [{best_row["min_gage"]:.2f} – {best_row["max_gage"]:.2f}]')
+log(f'    Length       : [{best_row["min_len"]:.0f} – {best_row["max_len"]:.0f}]')
+log(f'    GCSP         : {best_row["gcsp"]:.4f}  сек/шт')
+log(f'    Предсказанный score: {preds_orig[best_idx]:.2f}')
+log(f'    Реальный score:      {real_score}')
+
+# Детализация по пространствам
+mid_g = (best_row['min_gage'] + best_row['max_gage']) / 2
+mid_l = (best_row['min_len']  + best_row['max_len'])  / 2
+_, s_lp, s_lpfa, s_hv = compute_detailed_score(mid_g, mid_l, filters_dict)
+log()
+log(f'    Детализация реального score:')
+log(f'      LEAD PREP:    {s_lp}  из {len(filters_dict["LEAD PREP"])}  операций')
+log(f'      LEAD PREP FA: {s_lpfa}  из {len(filters_dict["LEAD PREP FA"])} операций')
+log(f'      High Voltage: {s_hv}  из {len(filters_dict["High Voltage"])}  операций')
+
+log()
+log('  Топ-10 проводов по предсказанию:')
+log(f'  {"Строка":>6} {"Gage мин":>8} {"Gage макс":>9} {"Len мин":>7} {"Len макс":>8}'
+    f' {"GCSP":>7} {"NN score":>9} {"Real":>6}')
+log('  ' + '─' * 62)
+top10 = np.argsort(ranking)[::-1][:10]
+for idx in top10:
+    r = df_cutting.iloc[idx]
+    log(f'  {int(r["excel_row"]):>6} {r["min_gage"]:>8.2f} {r["max_gage"]:>9.2f}'
+        f' {r["min_len"]:>7.0f} {r["max_len"]:>8.0f}'
+        f' {r["gcsp"]:>7.4f} {preds_orig[idx]:>9.2f} {int(y_scores[idx]):>6}')
+
+mae = float(np.mean(np.abs(preds_orig - y_scores)))
+log()
+log(f'  MAE (NN vs реальный score): {mae:.3f}  (диапазон score: {y_scores.max() - y_scores.min():.0f})')
+
+m = ai_cutting.history['metrics_all']
+all_results.append({
+    'sheet': 'CUTTING',
+    'n': len(X),
+    'mae': m['mae'],
+    'r2':  m['r2'],
+    'best_wire_row':   int(best_row['excel_row']),
+    'best_wire_score': real_score,
+    'status': '✅ trained',
+})
 
 
 # ─── 2. TOTAL VALUES GCSD ──────────────────────────────────────────────────────
@@ -206,294 +264,144 @@ df_gcsd, _ = load_and_prepare_total_gcsd(FILE_PATH, 'TOTAL values GCSD')
 df_gcsd    = create_features_total_gcsd(df_gcsd)
 df_train   = df_gcsd.dropna(subset=['PLANT STANDARD'])
 
-log(f'  Всего строк: {len(df_gcsd)}')
-log(f'  Для обучения (с меткой): {len(df_train)}')
-log(f'  Без метки (для предсказания): {len(df_gcsd) - len(df_train)}')
+log(f'  Всего строк: {len(df_gcsd)}, для обучения: {len(df_train)}')
 
 if len(df_train) >= MIN_SAMPLES:
-    ai = train_and_save(
-        'TOTAL values GCSD',
-        df_train[FEATURE_COLS_TOTAL_GCSD].values,
-        df_train['PLANT STANDARD'].values,
-        FEATURE_COLS_TOTAL_GCSD,
-    )
-    m = ai.history['metrics_all']
-    preds = ai.predict(df_train[FEATURE_COLS_TOTAL_GCSD].values)
-    pf    = _pass_fail_report(df_train['PLANT STANDARD'].values, preds,
-                              'TOTAL values GCSD check')
-    all_results.append({
-        'sheet': 'TOTAL values GCSD', 'n': len(df_train),
-        'mae': m['mae'], 'r2': m['r2'],
-        'pass_strict_pct': pf['pass_strict_pct'],
-        'pass_5pct_pct': pf['pass_5pct_pct'],
-        'status': '✅ trained',
-    })
+    ai_g = MiniAI(input_size=len(FEATURE_COLS_TOTAL_GCSD),
+                  hidden=(64, 32, 16), epochs=3000, lr=0.001,
+                  log_target=True, batch_size=512, patience=400)
+    ai_g.fit(df_train[FEATURE_COLS_TOTAL_GCSD].values,
+             df_train['PLANT STANDARD'].values,
+             FEATURE_COLS_TOTAL_GCSD, verbose=True)
+    model_dir = os.path.join(MODELS_DIR, safe_name('TOTAL values GCSD'))
+    os.makedirs(model_dir, exist_ok=True)
+    ai_g.save(os.path.join(model_dir, 'model.pkl'))
+    log(f'  💾 Сохранено → {model_dir}/model.pkl')
+    m = ai_g.history['metrics_all']
+    all_results.append({'sheet': 'TOTAL values GCSD', 'n': len(df_train),
+                        'mae': m['mae'], 'r2': m['r2'],
+                        'best_wire_row': None, 'best_wire_score': None,
+                        'status': '✅ trained'})
 else:
-    log(f'  ⚠️  Недостаточно данных ({len(df_train)} строк).')
+    log('  ⚠️  Недостаточно данных.')
     all_results.append({'sheet': 'TOTAL values GCSD', 'n': len(df_train),
                         'mae': None, 'r2': None,
-                        'pass_strict_pct': None, 'pass_5pct_pct': None,
+                        'best_wire_row': None, 'best_wire_score': None,
                         'status': '⚠️  skipped'})
 
 
-# ─── 3. GENERIC SHEETS (инкрементальное обучение по строкам CUTTING) ─────────
+# ─── 3. GENERIC SHEETS (LEAD PREP, LEAD PREP FA, High Voltage) ────────────────
+
+import pandas as _pd
 
 log()
 log('  ' + '=' * W)
-log('  Generic Sheets  (Incremental CUTTING-by-CUTTING Training)')
+log('  Generic Sheets  (LEAD PREP / LEAD PREP FA / High Voltage)')
 log('  ' + '=' * W)
-log()
-log(f'  Строк CUTTING: {len(df_cutting)}')
-log('  Концепт: каждая строка CUTTING активирует слоты листа → partial_fit()')
-EPOCHS_PER_CUTTING_ROW = 500
-log(f'  Эпох на строку CUTTING: {EPOCHS_PER_CUTTING_ROW}')
-log(f'  Вес реальных строк: {REAL_ROW_WEIGHT}×  (vs 1× для синтетики)')
-log()
 
 for sheet_name in GENERIC_SHEETS:
     log()
-    log('  ' + '=' * W)
-    log(f'  Sheet: {sheet_name}  (incremental)')
-    log('  ' + '=' * W)
+    log(f'  Sheet: {sheet_name}')
 
     df_sheet, _ = load_sheet_dynamic(FILE_PATH, sheet_name)
     real_rows = df_sheet[df_sheet['TOTAL'] > 0].copy()
     slot_rows = df_sheet[df_sheet['TOTAL'] <= 0].copy()
+    log(f'  Реальных строк: {len(real_rows)},  слотов (TOTAL=0): {len(slot_rows)}')
 
-    log(f'  Реальных строк : {len(real_rows)}')
-    log(f'  Слотов (QTY=0) : {len(slot_rows)}')
-    log(f'  Строк CUTTING  : {len(df_cutting)}')
-    log(f'  Итого шагов    : {len(df_cutting)} строк × {len(slot_rows)} слотов × {EPOCHS_PER_CUTTING_ROW} эпох')
-    log()
-
-    if len(slot_rows) == 0 and len(real_rows) < MIN_SAMPLES:
-        log(f'  ⚠️  Нет данных, пропуск.')
+    if len(real_rows) < MIN_SAMPLES:
+        log(f'  ⚠️  Мало реальных данных, пропуск.')
         all_results.append({'sheet': sheet_name, 'n': 0,
                             'mae': None, 'r2': None,
-                            'pass_strict_pct': None, 'pass_5pct_pct': None,
-                            'status': '⚠️  skipped'})
-        continue
-
-    if len(real_rows) < MIN_REAL_ROWS:
-        log(f'  ⚠️  Только {len(real_rows)} реальных строк (нужно ≥{MIN_REAL_ROWS}).')
-        log(f'       Обучение на чистой синтетике даёт константные предсказания — пропуск.')
-        log(f'       Добавьте реальные данные в лист "{sheet_name}" и повторите обучение.')
-        all_results.append({'sheet': sheet_name, 'n': len(real_rows),
-                            'mae': None, 'r2': None,
-                            'pass_strict_pct': None, 'pass_5pct_pct': None,
+                            'best_wire_row': None, 'best_wire_score': None,
                             'status': '⚠️  no real data'})
         continue
-
-    # ── Шаг 1: инициализация модели ──────────────────────────────────────────
-    first_cut = df_cutting.iloc[0]
 
     med_min_gage = float(df_cutting['min_gage'].median())
     med_max_gage = float(df_cutting['max_gage'].median())
     med_min_len  = float(df_cutting['min_len'].median())
     med_max_len  = float(df_cutting['max_len'].median())
 
-    init_records = []
+    # Фичи для generic sheets (GCSP + QTY)
+    def make_features(df_rows):
+        df_f = df_rows.copy()
+        df_f['GCSP_log']   = np.log1p(df_f['GCSP'])
+        df_f['QTY_log']    = np.log1p(df_f['QTY'].clip(lower=0))
+        df_f['GCSP_x_QTY'] = df_f['GCSP'] * df_f['QTY']
+        df_f['GCSP_sqrt']  = np.sqrt(df_f['GCSP'].clip(lower=0))
+        df_f['QTY_sqrt']   = np.sqrt(df_f['QTY'].clip(lower=0))
+        return df_f
 
-    # Реальные строки — повторяем несколько раз для усиления сигнала
-    for _ in range(5):  # 5× повторение реальных строк при инициализации
+    FCOLS = ['GCSP', 'QTY', 'GCSP_log', 'QTY_log', 'GCSP_x_QTY', 'GCSP_sqrt', 'QTY_sqrt']
+
+    # Строим обучающую выборку из реальных строк (×10 аугментация)
+    records = []
+    rng_g = np.random.default_rng(123)
+    for _ in range(10):
         for _, r in real_rows.iterrows():
-            init_records.append({
-                'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
-                'CATEGORY': r['CATEGORY'],
-                'min_gage': med_min_gage, 'max_gage': med_max_gage,
-                'min_len':  med_min_len,  'max_len':  med_max_len,
-                'source': 'real',
-            })
+            noise = rng_g.normal(0, 0.01)
+            records.append({'GCSP': r['GCSP'] * (1 + noise), 'QTY': r['QTY'],
+                            'TOTAL': r['TOTAL'], 'source': 'real'})
+    # Слоты — QTY=1, TOTAL=GCSP (предполагаем)
+    for _, r in slot_rows.iterrows():
+        records.append({'GCSP': r['GCSP'], 'QTY': 1.0,
+                        'TOTAL': r['GCSP'], 'source': 'slot'})
 
-    # Слоты с первой строкой CUTTING
-    for _, slot in slot_rows.iterrows():
-        gcsp_j = float(slot['GCSP'])
-        init_records.append({
-            'GCSP': gcsp_j, 'QTY': 1.0, 'TOTAL': gcsp_j,
-            'CATEGORY': slot['CATEGORY'],
-            'min_gage': float(first_cut['min_gage']),
-            'max_gage': float(first_cut['max_gage']),
-            'min_len':  float(first_cut['min_len']),
-            'max_len':  float(first_cut['max_len']),
-            'source': 'augmented',
-        })
-
-    df_init = _pd.DataFrame(init_records)
-    if len(df_init) < MIN_SAMPLES:
-        log(f'  ⚠️  Недостаточно данных для инициализации, пропуск.')
+    df_all = _pd.DataFrame(records)
+    if len(df_all) < MIN_SAMPLES:
+        log(f'  ⚠️  Недостаточно данных после аугментации.')
         all_results.append({'sheet': sheet_name, 'n': 0,
                             'mae': None, 'r2': None,
-                            'pass_strict_pct': None, 'pass_5pct_pct': None,
+                            'best_wire_row': None, 'best_wire_score': None,
                             'status': '⚠️  skipped'})
         continue
 
-    df_init_feat = create_features_augmented(df_init)
-    X_init = df_init_feat[FEATURE_COLS_AUGMENTED].values
-    y_init = df_init_feat['TOTAL'].values
-    sw_init = np.where(df_init_feat['source'] == 'real', REAL_ROW_WEIGHT, 1.0)
+    df_feat = make_features(df_all)
+    X_g = df_feat[FCOLS].values
+    y_g = df_feat['TOTAL'].values
+    sw_g = np.where(df_feat['source'] == 'real', 20.0, 1.0)
 
-    log('  Инициализация нормализации (первый fit)...')
     model_dir = os.path.join(MODELS_DIR, safe_name(sheet_name))
     os.makedirs(model_dir, exist_ok=True)
 
-    ai = MiniAI(input_size=len(FEATURE_COLS_AUGMENTED),
-                epochs=EPOCHS_PER_CUTTING_ROW, lr=0.001,
-                log_target=True, batch_size=512, patience=150)
-    ai.fit(X_init, y_init, FEATURE_COLS_AUGMENTED, verbose=False,
-           sample_weight=sw_init)
-    log(f'  Нормализация зафиксирована. Начинаем инкрементальное обучение...')
-    log()
+    ai_gs = MiniAI(input_size=len(FCOLS), hidden=(64, 32, 16),
+                   epochs=2000, lr=0.001, log_target=True,
+                   batch_size=256, patience=300)
+    ai_gs.fit(X_g, y_g, FCOLS, verbose=True, sample_weight=sw_g)
+    ai_gs.save(os.path.join(model_dir, 'model.pkl'))
+    log(f'  💾 Сохранено → {model_dir}/model.pkl')
 
-    # ── Шаг 2: итерация по строкам CUTTING ────────────────────────────────────
-    n_cut = len(df_cutting)
-    log_every = max(1, n_cut // 10)
-
-    for cut_idx, (_, cut_row) in enumerate(df_cutting.iterrows()):
-        c_min_gage = float(cut_row['min_gage'])
-        c_max_gage = float(cut_row['max_gage'])
-        c_min_len  = float(cut_row['min_len'])
-        c_max_len  = float(cut_row['max_len'])
-
-        step_records = []
-        for _, slot in slot_rows.iterrows():
-            gcsp_j = float(slot['GCSP'])
-            step_records.append({
-                'GCSP': gcsp_j, 'QTY': 1.0, 'TOTAL': gcsp_j,
-                'CATEGORY': slot['CATEGORY'],
-                'min_gage': c_min_gage, 'max_gage': c_max_gage,
-                'min_len':  c_min_len,  'max_len':  c_max_len,
-                'source': 'augmented',
-            })
-
-        # Всегда добавляем реальные строки (с высоким весом)
-        for _, r in real_rows.iterrows():
-            step_records.append({
-                'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
-                'CATEGORY': r['CATEGORY'],
-                'min_gage': med_min_gage, 'max_gage': med_max_gage,
-                'min_len':  med_min_len,  'max_len':  med_max_len,
-                'source': 'real',
-            })
-
-        df_step = _pd.DataFrame(step_records)
-        df_step_feat = create_features_augmented(df_step)
-        X_step = df_step_feat[FEATURE_COLS_AUGMENTED].values
-        y_step = df_step_feat['TOTAL'].values
-        sw_step = np.where(df_step_feat['source'] == 'real', REAL_ROW_WEIGHT, 1.0)
-
-        ai.partial_fit(X_step, y_step, epochs=EPOCHS_PER_CUTTING_ROW,
-                       sample_weight=sw_step, verbose=False)
-
-        if (cut_idx + 1) % log_every == 0 or cut_idx == n_cut - 1:
-            pct = (cut_idx + 1) / n_cut * 100
-            log(f'  [{pct:5.1f}%]  CUTTING строка {cut_idx+1}/{n_cut}'
-                f'  gage=[{c_min_gage:.1f}–{c_max_gage:.1f}]'
-                f'  len=[{c_min_len:.0f}–{c_max_len:.0f}]'
-                f'  t={ai.t} шагов Adam')
-
-    log()
-    log(f'  Инкрементальное обучение завершено. Всего шагов Adam: {ai.t}')
-
-    # ── Шаг 3: финальная оценка на всех данных ────────────────────────────────
-    ai.save(os.path.join(model_dir, 'model.pkl'))
-    log(f'  💾 Model saved → {model_dir}/model.pkl')
-
-    all_records = []
-    for _, r in real_rows.iterrows():
-        all_records.append({
-            'GCSP': r['GCSP'], 'QTY': r['QTY'], 'TOTAL': r['TOTAL'],
-            'CATEGORY': r['CATEGORY'],
-            'min_gage': med_min_gage, 'max_gage': med_max_gage,
-            'min_len':  med_min_len,  'max_len':  med_max_len,
-            'source': 'real',
-        })
-    mid_cut = df_cutting.iloc[len(df_cutting)//2]
-    for _, slot in slot_rows.iterrows():
-        gcsp_j = float(slot['GCSP'])
-        all_records.append({
-            'GCSP': gcsp_j, 'QTY': 1.0, 'TOTAL': gcsp_j,
-            'CATEGORY': slot['CATEGORY'],
-            'min_gage': float(mid_cut['min_gage']),
-            'max_gage': float(mid_cut['max_gage']),
-            'min_len':  float(mid_cut['min_len']),
-            'max_len':  float(mid_cut['max_len']),
-            'source': 'augmented',
-        })
-
-    df_eval = _pd.DataFrame(all_records)
-    df_eval_feat = create_features_augmented(df_eval)
-    X_eval = df_eval_feat[FEATURE_COLS_AUGMENTED].values
-    y_eval = df_eval_feat['TOTAL'].values
-
-    preds = ai.predict(X_eval)
-    pf = _pass_fail_report(y_eval, preds, f'{sheet_name} final check')
-
-    err = preds - y_eval
-    mae = float(np.mean(np.abs(err)))
-    ss_r = float(np.sum(err**2))
-    ss_t = float(np.sum((y_eval - y_eval.mean())**2))
-    r2 = 1.0 - ss_r / (ss_t + 1e-10)
-
-    all_results.append({
-        'sheet': sheet_name,
-        'n': len(df_cutting) * len(slot_rows) + len(real_rows),
-        'mae': mae, 'r2': r2,
-        'pass_strict_pct': pf['pass_strict_pct'],
-        'pass_5pct_pct': pf['pass_5pct_pct'],
-        'status': '✅ trained',
-    })
+    m = ai_gs.history['metrics_all']
+    all_results.append({'sheet': sheet_name,
+                        'n': len(df_all),
+                        'mae': m['mae'], 'r2': m['r2'],
+                        'best_wire_row': None, 'best_wire_score': None,
+                        'status': '✅ trained'})
 
 
-# ─── ИТОГОВАЯ ТАБЛИЦА ──────────────────────────────────────────────────────────
+# ─── 4. SIMPLE_QTY_SHEETS — без обучения ─────────────────────────────────────
 
-session_end     = datetime.datetime.now()
-session_elapsed = (session_end - session_start).total_seconds()
+log()
+log('  ' + '-' * W)
+log(f'  Листы без нейросети (QTY=1 в predict.py): {SIMPLE_QTY_SHEETS}')
+log('  ' + '-' * W)
 
+
+# ─── ИТОГ ─────────────────────────────────────────────────────────────────────
+
+session_elapsed = (datetime.datetime.now() - session_start).total_seconds()
 log()
 log('  ' + '═' * W)
 log(f'  {"📋  SESSION SUMMARY":^{W}}')
 log('  ' + '═' * W)
 log()
 
-col_w = [26, 6, 9, 7, 12, 12, 14]
-total_w = sum(col_w) + 16
-header = (f'  │  {"Sheet":<{col_w[0]}}'
-          f'{"N":>{col_w[1]}}'
-          f'{"MAE":>{col_w[2]}}'
-          f'{"R²":>{col_w[3]}}'
-          f'{"Pass≤ref%":>{col_w[4]}}'
-          f'{"Pass≤+5%%":>{col_w[5]}}'
-          f'{"Status":>{col_w[6]}}  │')
-sep = '  ├' + '─' * total_w + '┤'
-
-log('  ┌' + '─' * total_w + '┐')
-log(header)
-log(sep)
 for r in all_results:
-    mae_s  = f'{r["mae"]:.4f}'  if r['mae']  is not None else '  —  '
-    r2_s   = f'{r["r2"]:.4f}'   if r['r2']   is not None else '  —  '
-    ps_s   = f'{r["pass_strict_pct"]:.1f}%' if r['pass_strict_pct'] is not None else '  —  '
-    p5_s   = f'{r["pass_5pct_pct"]:.1f}%'   if r['pass_5pct_pct']   is not None else '  —  '
-    log(f'  │  {r["sheet"]:<{col_w[0]}}'
-        f'{r["n"]:>{col_w[1]}}'
-        f'{mae_s:>{col_w[2]}}'
-        f'{r2_s:>{col_w[3]}}'
-        f'{ps_s:>{col_w[4]}}'
-        f'{p5_s:>{col_w[5]}}'
-        f'{r["status"]:>{col_w[6]}}  │')
-log('  └' + '─' * total_w + '┘')
-
-trained = [r for r in all_results if r['mae'] is not None]
-if trained:
-    log()
-    log(f'  Средний MAE : {np.mean([r["mae"] for r in trained]):.4f} мин')
-    log(f'  Средний R²  : {np.mean([r["r2"] for r in trained]):.4f}')
-    log(f'  Среднее Pass≤ref: {np.mean([r["pass_strict_pct"] for r in trained]):.1f}%')
-    log(f'  Среднее Pass≤+5%: {np.mean([r["pass_5pct_pct"]   for r in trained]):.1f}%')
+    mae_s = f'{r["mae"]:.4f}' if r['mae'] is not None else '  —  '
+    r2_s  = f'{r["r2"]:.4f}'  if r['r2']  is not None else '  —  '
+    bw    = f'row {r["best_wire_row"]} (score={r["best_wire_score"]})' \
+            if r['best_wire_row'] is not None else '—'
+    log(f'  {r["sheet"]:<30}  MAE={mae_s}  R²={r2_s}  BestWire={bw}  {r["status"]}')
 
 log()
-log(f'  ✅  Обучение завершено.')
-log(f'  ⏱  Всего: {session_elapsed:.1f} сек')
-log(f'  📁  Лог: logs/training.log')
+log(f'  ✅  Обучение завершено за {session_elapsed:.1f} сек')
 log('  ' + '═' * W)
-log()

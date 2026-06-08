@@ -1,25 +1,39 @@
+"""
+predict.py — Предсказание лучшего провода нейросетью
+-----------------------------------------------------
+
+КОНЦЕПЦИЯ:
+  Нейросеть обучена предсказывать детальный score (сумма пройденных операций
+  из LEAD PREP + LEAD PREP FA + High Voltage) для каждого провода из CUTTING.
+  
+  Алгоритм:
+  1. Загружаем все провода из CUTTING (575 строк)
+  2. Нейросеть предсказывает score для каждого
+  3. Выбираем провод с максимальным predicted_score
+  4. При равенстве score — выбираем провод с наименьшим GCSP (быстрее)
+  5. Записываем результат в Excel: QTY=1 для лучшего, predicted_score в столбец J,
+     отметка BEST в столбце K
+"""
+
 import os
 import datetime
 import numpy as np
 from openpyxl import load_workbook
 
 from data_preparation import (
-    GENERIC_SHEETS,
-    FEATURE_COLS,
-    FEATURE_COLS_TOTAL_GCSD,
-    FEATURE_COLS_CUTTING,
-    FEATURE_COLS_AUGMENTED,
     load_cutting_sheet,
+    load_all_filters,
+    compute_detailed_score,
     create_cutting_features,
+    _encode_machine_group,
+    FEATURE_COLS_CUTTING,
+    GENERIC_SHEETS,
+    SIMPLE_QTY_SHEETS,
     load_sheet_dynamic,
-    create_features,
-    create_features_augmented,
     load_and_prepare_total_gcsd,
     create_features_total_gcsd,
-    _is_header,
-    _to_float,
-    _col_index,
-    _encode_machine_group,
+    FEATURE_COLS_TOTAL_GCSD,
+    _is_header, _to_float, _col_index,
 )
 from model import MiniAI
 
@@ -57,48 +71,60 @@ def _write_cell(cell, value, fmt=NUMBER_FMT):
     cell.number_format = fmt
 
 
-def _pred_stats(preds, label='Predictions'):
-    if len(preds) == 0:
-        return f'  {label}: (empty)'
-    return (f'  {label}: n={len(preds)}'
-            f'  mean={np.mean(preds):.4f}'
-            f'  std={np.std(preds):.4f}'
-            f'  min={np.min(preds):.4f}'
-            f'  max={np.max(preds):.4f}')
-
-
-def _pass_fail_inline(y_true, y_pred):
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
-    return y_pred <= y_true
-
-
-# ─────────────────────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
 
 session_start = datetime.datetime.now()
 W = 70
 
 log()
 log('  ' + '═' * W)
-log(f'  {"🔮  PREDICTION SESSION (Wire-by-Wire Concept)":^{W}}')
+log(f'  {"🔮  BEST WIRE PREDICTION (Neural Network — Detailed Score)":^{W}}')
 log(f'  {"Started: " + session_start.strftime("%Y-%m-%d  %H:%M:%S"):^{W}}')
-log(f'  {"Input:  " + FILE_PATH:^{W}}')
-log(f'  {"Output: results/RESULT_ALL_SHEETS.xlsx":^{W}}')
 log('  ' + '═' * W)
 
 all_results = []
 wb = load_workbook(FILE_PATH)
 
 
-# ─── 1. CUTTING (Wire-by-Wire) ─────────────────────────────────────────────────
+# ─── 1. CUTTING — поиск лучшего провода ──────────────────────────────────────
 
 log()
 log('  ' + '=' * W)
-log('  Sheet: CUTTING  (Wire-by-Wire Prediction)')
+log('  CUTTING — нейросеть предсказывает детальный score для каждого провода')
 log('  ' + '=' * W)
 log()
 
 df_cutting = load_cutting_sheet(FILE_PATH, 'CUTTING')
+log(f'  Загружено {len(df_cutting)} проводов из CUTTING')
+
+# Загружаем фильтры (для верификации реального score)
+log()
+log('  Загрузка фильтров операций...')
+filters_dict = load_all_filters(FILE_PATH)
+total_ops = sum(len(v) for v in filters_dict.values())
+log(f'  Итого операций с ограничениями: {total_ops}')
+
+# Вычисляем реальный score для каждого провода (верификация)
+real_scores = []
+real_lp = []
+real_lpfa = []
+real_hv = []
+for _, w in df_cutting.iterrows():
+    mid_g = (w['min_gage'] + w['max_gage']) / 2.0
+    mid_l = (w['min_len']  + w['max_len'])  / 2.0
+    total, s_lp, s_lpfa, s_hv = compute_detailed_score(mid_g, mid_l, filters_dict)
+    real_scores.append(total)
+    real_lp.append(s_lp)
+    real_lpfa.append(s_lpfa)
+    real_hv.append(s_hv)
+
+real_scores = np.array(real_scores, dtype=float)
+
+log()
+log(f'  Реальный score: min={real_scores.min():.0f}  max={real_scores.max():.0f}'
+    f'  mean={real_scores.mean():.1f}')
+
+# ─── Нейросеть ───────────────────────────────────────────────────────────────
 
 mp     = model_path('CUTTING')
 use_ai = os.path.exists(mp)
@@ -106,83 +132,103 @@ use_ai = os.path.exists(mp)
 if use_ai:
     ai_cut = MiniAI.load(mp)
 
-    # Получаем group_mapping из модели (если сохранён) или пересчитываем
     if hasattr(ai_cut, 'group_mapping') and ai_cut.group_mapping:
-        gmap   = ai_cut.group_mapping
-        ggmean = ai_cut.group_global_mean or 0.0
+        gmap, ggmean = ai_cut.group_mapping, ai_cut.group_global_mean or 0.0
     else:
         _, gmap, ggmean = _encode_machine_group(df_cutting)
 
     df_feat = create_cutting_features(df_cutting, gmap, ggmean)
-    X       = df_feat[ai_cut.feature_cols].values
-    preds   = ai_cut.predict(X)
-    log(f'  ✅ AI модель загружена — {len(preds)} предсказаний')
-    if ai_cut.history:
-        m = ai_cut.history.get('metrics_all', {})
-        log(f'  Качество модели (из обучения):')
-        log(f'    MAE={m.get("mae",0):.4f}  RMSE={m.get("rmse",0):.4f}'
-            f'  R²={m.get("r2",0):.4f}  MAPE={m.get("mape",0):.2f}%')
+    X       = df_feat[FEATURE_COLS_CUTTING].values
+
+    nn_scores = ai_cut.predict(X)
+
+    mae = float(np.mean(np.abs(nn_scores - real_scores)))
+    log()
+    log(f'  ✅ Нейросеть предсказала score для {len(nn_scores)} проводов')
+    log(f'     mean={nn_scores.mean():.2f}  min={nn_scores.min():.2f}  max={nn_scores.max():.2f}')
+    log(f'     MAE vs реальный score: {mae:.3f}')
 else:
-    preds = df_cutting['gcsp'].values.copy()
-    log(f'  ⚠️  Нет модели — fallback (pred = table GCSP)')
+    # Fallback: используем реальный score напрямую
+    log('  ⚠️  Модель не найдена — fallback (реальный score из правил)')
+    nn_scores = real_scores.copy()
 
-table_gcsp = df_cutting['gcsp'].values
-passed     = _pass_fail_inline(table_gcsp, preds)
+# ─── ВЫБОР ЛУЧШЕГО ПРОВОДА ────────────────────────────────────────────────────
+# Критерий: max(predicted_score), при равенстве — min(gcsp)
+
+gcsp_arr = df_cutting['gcsp'].values
+ranking  = nn_scores * 10000.0 - gcsp_arr   # × 10000 гарантирует приоритет score над gcsp
+best_idx = int(np.argmax(ranking))
+best_row = df_cutting.iloc[best_idx]
+
+# Детализация реального score для лучшего провода
+best_mid_g = (best_row['min_gage'] + best_row['max_gage']) / 2
+best_mid_l = (best_row['min_len']  + best_row['max_len'])  / 2
+_, best_lp, best_lpfa, best_hv = compute_detailed_score(
+    best_mid_g, best_mid_l, filters_dict)
 
 log()
-log(f'  ── Wire-by-Wire Pass/Fail Report ──')
-log(f'  Всего строк    : {len(preds)}')
-log(f'  Pass (pred ≤ ref): {passed.sum():4d}  ({passed.mean()*100:.1f}%)')
-log(f'  Fail (pred > ref): {(~passed).sum():4d}  ({(~passed).mean()*100:.1f}%)')
+log('  ' + '─' * W)
+log(f'  {"🏆  ЛУЧШИЙ ПРОВОД":^{W}}')
+log('  ' + '─' * W)
+log(f'  Excel-строка      : {int(best_row["excel_row"])}')
+log(f'  Группа машины     : {best_row["machine_group"]}')
+log(f'  Gage              : [{best_row["min_gage"]:.2f} – {best_row["max_gage"]:.2f}]  (mid={best_mid_g:.2f})')
+log(f'  Length            : [{best_row["min_len"]:.0f} – {best_row["max_len"]:.0f}]  (mid={best_mid_l:.0f})')
+log(f'  GCSP              : {best_row["gcsp"]:.4f}  сек/шт')
 log()
+log(f'  NN predicted score: {nn_scores[best_idx]:.2f}')
+log(f'  Реальный score    : {int(real_scores[best_idx])}  из {total_ops} операций')
+log()
+log(f'  Детализация реального score:')
+log(f'    LEAD PREP:    {best_lp:4d}  из {len(filters_dict["LEAD PREP"])}  операций')
+log(f'    LEAD PREP FA: {best_lpfa:4d}  из {len(filters_dict["LEAD PREP FA"])} операций')
+log(f'    High Voltage: {best_hv:4d}  из {len(filters_dict["High Voltage"])}  операций')
 
-log('  Детали (первые 10 строк):')
-log(f'  {"Excel":>6} {"MinG":>6} {"MaxG":>6} {"MinL":>7} {"MaxL":>7}'
-    f' {"GCSP_ref":>9} {"GCSP_pred":>9} {"Pass":>6}')
-log('  ' + '-' * 68)
-for idx in range(min(10, len(df_cutting))):
-    row = df_cutting.iloc[idx]
-    log(f'  {int(row["excel_row"]):6d} {row["min_gage"]:6.2f} {row["max_gage"]:6.2f}'
-        f' {row["min_len"]:7.0f} {row["max_len"]:7.0f}'
-        f' {row["gcsp"]:9.4f} {preds[idx]:9.4f}'
-        f' {"✅" if passed[idx] else "❌":>6}')
-if len(df_cutting) > 10:
-    log('  ...')
-    for idx in range(max(10, len(df_cutting) - 3), len(df_cutting)):
-        row = df_cutting.iloc[idx]
-        log(f'  {int(row["excel_row"]):6d} {row["min_gage"]:6.2f} {row["max_gage"]:6.2f}'
-            f' {row["min_len"]:7.0f} {row["max_len"]:7.0f}'
-            f' {row["gcsp"]:9.4f} {preds[idx]:9.4f}'
-            f' {"✅" if passed[idx] else "❌":>6}')
+# ─── Топ-10 ───────────────────────────────────────────────────────────────────
 
-# Записываем в Excel
-# BUG FIX: QTY=1 ставим ТОЛЬКО для строк где QTY был 0/None,
-# чтобы не разрушать оригинальные QTY
+log()
+log('  Топ-10 проводов по предсказанию нейросети:')
+log(f'  {"Строка":>6} {"Gage мин":>8} {"Gage макс":>9} {"Len мин":>7} {"Len макс":>8}'
+    f' {"GCSP":>7} {"NN score":>9} {"Real":>6}')
+log('  ' + '─' * 62)
+top10_idx = np.argsort(ranking)[::-1][:10]
+for idx in top10_idx:
+    r = df_cutting.iloc[idx]
+    log(f'  {int(r["excel_row"]):>6} {r["min_gage"]:>8.2f} {r["max_gage"]:>9.2f}'
+        f' {r["min_len"]:>7.0f} {r["max_len"]:>8.0f}'
+        f' {r["gcsp"]:>7.4f} {nn_scores[idx]:>9.2f} {int(real_scores[idx]):>6}')
+
+# ─── Записываем в Excel ───────────────────────────────────────────────────────
+
 ws_cut = wb['CUTTING']
 written_cut = 0
 
 for idx, (_, row_data) in enumerate(df_cutting.iterrows()):
-    excel_row = int(row_data['excel_row'])
-    pred_gcsp = float(preds[idx])
+    excel_row  = int(row_data['excel_row'])
+    pred_score = float(nn_scores[idx])
 
-    # QTY: ставим 1 только если оригинальный QTY=0 (слот-строка)
-    orig_qty = row_data['qty']
-    if orig_qty == 0.0:
-        ws_cut.cell(row=excel_row, column=9).value = int(1)
-        ws_cut.cell(row=excel_row, column=9).number_format = '0'
-
-    # TOTAL TIME = pred_gcsp (в J, 10-й столбец)
-    _write_cell(ws_cut.cell(row=excel_row, column=10), pred_gcsp)
+    # Столбец J = predicted score (аудит)
+    _write_cell(ws_cut.cell(row=excel_row, column=10), pred_score)
+    # Столбец L = реальный score (верификация)
+    ws_cut.cell(row=excel_row, column=12).value = int(real_scores[idx])
     written_cut += 1
 
+# Лучший провод: QTY=1 в столбец I, BEST в столбец K
+best_excel_row = int(best_row['excel_row'])
+ws_cut.cell(row=best_excel_row, column=9).value  = 1
+ws_cut.cell(row=best_excel_row, column=9).number_format = '0'
+ws_cut.cell(row=best_excel_row, column=11).value = 'BEST'
+
 log()
-log(f'  ✅ Записано {written_cut} строк (pred_GCSP в J, QTY=1 только для пустых слотов)')
+log(f'  ✅ Записано {written_cut} строк.')
+log(f'     Лучший провод отмечен QTY=1 (col I) и BEST (col K) → строка {best_excel_row}')
 
 all_results.append(dict(
     sheet='CUTTING', rows=len(df_cutting), written=written_cut,
     method='AI' if use_ai else 'fallback',
-    pass_pct=float(passed.mean() * 100),
-    mean_p=float(np.mean(preds)), std_p=float(np.std(preds)),
+    best_wire_row=best_excel_row,
+    best_nn_score=float(nn_scores[best_idx]),
+    best_real_score=int(real_scores[best_idx]),
 ))
 
 
@@ -203,34 +249,13 @@ if use_ai:
     ai    = MiniAI.load(mp)
     X     = df_feat_g[ai.feature_cols].values
     preds = ai.predict(X)
-    log(f'  ✅ AI модель загружена — {len(preds)} предсказаний')
+    log(f'  ✅ AI — {len(preds)} предсказаний')
 else:
     preds = (df_gcsd['GCSD'] * df_gcsd['ADJ.']).clip(lower=0).values
-    log(f'  ⚠️  Нет модели — fallback GCSD×ADJ')
-
-known_mask = df_gcsd['PLANT STANDARD'].notna().values
-if known_mask.sum() > 0:
-    known_true = df_gcsd.loc[known_mask, 'PLANT STANDARD'].values
-    known_pred = preds[known_mask]
-    passed_g   = _pass_fail_inline(known_true, known_pred)
-    log(f'  Pass (pred ≤ ref): {passed_g.sum()}/{known_mask.sum()} '
-        f'({passed_g.mean()*100:.1f}%)')
+    log('  ⚠️  Нет модели — fallback GCSD×ADJ')
 
 ws_g   = wb['TOTAL values GCSD']
 E_COL, M_COL = 5, 13
-
-for col_1 in set(int(df_gcsd.iloc[i]['plant_col']) + 1 for i in range(len(df_gcsd))):
-    for row in ws_g.iter_rows(min_col=col_1, max_col=col_1):
-        cell = row[0]
-        if isinstance(cell.value, str) and cell.value.startswith('='):
-            fval_up = cell.value.upper()
-            if not any(kw in fval_up for kw in ('SUMIF', 'SUMIFS', 'SUM(', 'COUNT', 'AVERAGE')):
-                _write_cell(cell, 0)
-
-for stale_row in (24, 25, 26):
-    cell = ws_g.cell(row=stale_row, column=E_COL)
-    if cell.value is not None and not (isinstance(cell.value, str) and 'SUM' in str(cell.value).upper()):
-        cell.value = None
 
 written_gcsd = 0
 for i, pred in enumerate(preds):
@@ -243,79 +268,68 @@ ws_g.cell(row=13, column=E_COL).value = '=SUM(E6:E12)'
 ws_g.cell(row=23, column=E_COL).value = '=SUM(E19:E22)'
 ws_g.cell(row=27, column=M_COL).value = '=SUM(M19:M26)'
 
-log(f'  ✅ Записано {written_gcsd} ячеек, SUM формулы E13/E23/M27 установлены')
-
-all_results.append(dict(
-    sheet='TOTAL values GCSD', rows=len(df_gcsd), written=written_gcsd,
-    method='AI' if use_ai else 'fallback',
-    pass_pct=float(passed_g.mean()*100) if known_mask.sum() > 0 else 0.0,
-    mean_p=float(np.mean(preds)), std_p=float(np.std(preds)),
-))
+log(f'  ✅ Записано {written_gcsd} ячеек')
+all_results.append(dict(sheet='TOTAL values GCSD', rows=len(df_gcsd),
+                        written=written_gcsd, method='AI' if use_ai else 'fallback',
+                        best_wire_row=None, best_nn_score=None, best_real_score=None))
 
 
-# ─── 3. GENERIC SHEETS ────────────────────────────────────────────────────────
+# ─── 3. GENERIC SHEETS (LEAD PREP / LEAD PREP FA / High Voltage) ──────────────
 
 for sheet_name in GENERIC_SHEETS:
     log()
-    log('  ' + '=' * W)
     log(f'  Sheet: {sheet_name}')
-    log('  ' + '=' * W)
 
     df, _ = load_sheet_dynamic(FILE_PATH, sheet_name)
     if len(df) == 0:
-        log('  ⚠️  Нет данных — пропуск.')
+        log('  ⚠️  Нет данных.')
         all_results.append(dict(sheet=sheet_name, rows=0, written=0,
-                                method='—', pass_pct=0.0, mean_p=0.0, std_p=0.0))
+                                method='—', best_wire_row=None,
+                                best_nn_score=None, best_real_score=None))
         continue
 
-    med_min_gage = float(df_cutting['min_gage'].median())
-    med_max_gage = float(df_cutting['max_gage'].median())
-    med_min_len  = float(df_cutting['min_len'].median())
-    med_max_len  = float(df_cutting['max_len'].median())
-    df = df.copy()
-    df['min_gage'] = med_min_gage
-    df['max_gage'] = med_max_gage
-    df['min_len']  = med_min_len
-    df['max_len']  = med_max_len
+    FCOLS = ['GCSP', 'QTY', 'GCSP_log', 'QTY_log', 'GCSP_x_QTY', 'GCSP_sqrt', 'QTY_sqrt']
 
-    df_feat = create_features_augmented(df)
+    def _make_feat(df_rows):
+        d = df_rows.copy()
+        d['GCSP_log']   = np.log1p(d['GCSP'])
+        d['QTY_log']    = np.log1p(d['QTY'].clip(lower=0))
+        d['GCSP_x_QTY'] = d['GCSP'] * d['QTY']
+        d['GCSP_sqrt']  = np.sqrt(d['GCSP'].clip(lower=0))
+        d['QTY_sqrt']   = np.sqrt(d['QTY'].clip(lower=0))
+        return d
+
+    df_feat = _make_feat(df)
     mp      = model_path(sheet_name)
     use_ai  = os.path.exists(mp)
 
     if use_ai:
-        ai    = MiniAI.load(mp)
-        X     = df_feat[ai.feature_cols].values
-        preds = ai.predict(X)
-        log(f'  ✅ AI модель загружена — {len(preds)} предсказаний')
-    else:
+        ai = MiniAI.load(mp)
+        X  = df_feat[FCOLS].values
+        # Проверяем совместимость модели (могла быть обучена с другим набором фич)
+        if hasattr(ai, 'x_mean') and ai.x_mean is not None and len(ai.x_mean) != X.shape[1]:
+            log(f'  ⚠️  Модель несовместима ({len(ai.x_mean)} фич vs {X.shape[1]}) — fallback')
+            use_ai = False
+        else:
+            preds = ai.predict(X)
+            log(f'  ✅ AI — {len(preds)} предсказаний')
+    if not use_ai:
         known = df[df['TOTAL'] > 0]
         median_ratio = float((known['TOTAL'] / known['GCSP']).median()) if len(known) > 0 else 1.0
         preds = (df['GCSP'] * df['QTY'].clip(lower=1)).values.copy()
         zero_qty_mask = df['QTY'].values == 0.0
         preds[zero_qty_mask] = df['GCSP'].values[zero_qty_mask] * median_ratio
-        log(f'  ⚠️  Нет модели — fallback')
-
-    known_vals  = df['TOTAL'].values
-    known_mask2 = known_vals > 0
-    if known_mask2.sum() > 0:
-        passed2 = _pass_fail_inline(known_vals[known_mask2], preds[known_mask2])
-        log(f'  Pass (pred ≤ ref): {passed2.sum()}/{known_mask2.sum()} '
-            f'({passed2.mean()*100:.1f}%)')
-        pass_pct2 = float(passed2.mean() * 100)
-    else:
-        pass_pct2 = 0.0
+        log('  ⚠️  Нет модели — fallback')
 
     ws       = wb[sheet_name]
     all_rows = list(ws.iter_rows())
     cur_tot  = cur_qty = None
-    cleared  = 0
 
     for row_cells in all_rows:
         vals = [c.value for c in row_cells]
         if _is_header(vals):
             candidates = [j for j, v in enumerate(vals)
-                          if v is not None
-                          and 'total' in str(v).lower()
+                          if v is not None and 'total' in str(v).lower()
                           and 'sub' not in str(v).lower()]
             cur_tot = (candidates[-1] + 1) if candidates else None
             qty_j   = _col_index(vals, 'qty', 'quantity')
@@ -327,14 +341,8 @@ for sheet_name in GENERIC_SHEETS:
             tcell = row_cells[cur_tot - 1]
             if isinstance(tcell.value, str) and tcell.value.startswith('='):
                 fval_up = tcell.value.upper()
-                if not any(kw in fval_up for kw in ('SUMIF','SUMIFS','SUM(','COUNT','AVERAGE')):
+                if not any(kw in fval_up for kw in ('SUMIF', 'SUMIFS', 'SUM(', 'COUNT', 'AVERAGE')):
                     _write_cell(tcell, 0)
-                    cleared += 1
-        if cur_qty and cur_qty <= len(row_cells):
-            qcell = row_cells[cur_qty - 1]
-            if isinstance(qcell.value, str) and qcell.value.startswith('='):
-                qcell.value = int(0)
-                qcell.number_format = '0'
 
     row_pred_map = {int(rec['row_index']): {
         'pred': float(preds[idx_pos]),
@@ -355,7 +363,6 @@ for sheet_name in GENERIC_SHEETS:
         if tot_col_1 <= len(row_cells):
             _write_cell(row_cells[tot_col_1 - 1], meta['pred'])
             written += 1
-        # BUG FIX: QTY заполняем только если реально 0 (слот)
         if meta['qty'] == 0.0 and qty_col_1 <= len(row_cells):
             computed_qty = max(0.0, meta['pred'] / meta['gcsp']) if meta['gcsp'] > 0 else 0.0
             qcell = row_cells[qty_col_1 - 1]
@@ -364,14 +371,67 @@ for sheet_name in GENERIC_SHEETS:
                 qcell.number_format = '0'
                 qty_written += 1
 
-    log(f'  ✅ Записано {written} TOTAL ячеек, {qty_written} QTY ячеек')
+    log(f'  ✅ {written} TOTAL, {qty_written} QTY ячеек записано')
+    all_results.append(dict(sheet=sheet_name, rows=len(df), written=written,
+                            method='AI' if use_ai else 'fallback',
+                            best_wire_row=None, best_nn_score=None, best_real_score=None))
 
-    all_results.append(dict(
-        sheet=sheet_name, rows=len(df), written=written,
-        method='AI' if use_ai else 'fallback',
-        pass_pct=pass_pct2,
-        mean_p=float(np.mean(preds)), std_p=float(np.std(preds)),
-    ))
+
+# ─── 4. SIMPLE QTY SHEETS — QTY=1 везде ─────────────────────────────────────
+
+for sheet_name in SIMPLE_QTY_SHEETS:
+    log()
+    log(f'  Sheet: {sheet_name}  [QTY=1 mode]')
+
+    if sheet_name not in wb.sheetnames:
+        log(f'  ⚠️  Лист не найден, пропуск.')
+        all_results.append(dict(sheet=sheet_name, rows=0, written=0,
+                                method='QTY=1', best_wire_row=None,
+                                best_nn_score=None, best_real_score=None))
+        continue
+
+    ws = wb[sheet_name]
+    all_rows = list(ws.iter_rows())
+    cur_qty  = None
+    cur_gcsp = None
+    qty_written = 0
+
+    for row_cells in all_rows:
+        vals = [c.value for c in row_cells]
+
+        # Ищем строку-заголовок по наличию 'qty'/'quantity'
+        qty_j = _col_index(vals, 'qty', 'quantity')
+        if qty_j is not None:
+            cur_qty  = qty_j + 1
+            gcsp_j   = _col_index(vals, 'global sec')
+            cur_gcsp = gcsp_j   # None если колонки gcsp нет
+            continue
+
+        if cur_qty is None:
+            continue
+
+        # Если есть gcsp-колонка — фильтруем по gcsp > 0
+        # Если нет — ставим QTY=1 любой непустой строке
+        if cur_gcsp is not None:
+            gcsp_val = _to_float(vals[cur_gcsp]) if cur_gcsp < len(vals) else None
+            if gcsp_val is None or gcsp_val <= 0:
+                continue
+        else:
+            if not any(v is not None for v in vals):
+                continue
+
+        if cur_qty <= len(row_cells):
+            qcell = row_cells[cur_qty - 1]
+            existing = _to_float(qcell.value)
+            if qcell.value is None or existing == 0.0:
+                qcell.value = 1
+                qcell.number_format = '0'
+                qty_written += 1
+
+    log(f'  ✅ QTY=1 проставлено в {qty_written} ячейках')
+    all_results.append(dict(sheet=sheet_name, rows=qty_written, written=qty_written,
+                            method='QTY=1', best_wire_row=None,
+                            best_nn_score=None, best_real_score=None))
 
 
 # ─── СОХРАНЕНИЕ И ИТОГ ────────────────────────────────────────────────────────
@@ -379,44 +439,43 @@ for sheet_name in GENERIC_SHEETS:
 combined_out = os.path.join(OUTPUT_DIR, 'RESULT_ALL_SHEETS.xlsx')
 wb.save(combined_out)
 
-session_end     = datetime.datetime.now()
-session_elapsed = (session_end - session_start).total_seconds()
+session_elapsed = (datetime.datetime.now() - session_start).total_seconds()
 
 log()
 log('  ' + '═' * W)
-log(f'  {"📋  PREDICTION SESSION SUMMARY":^{W}}')
+log(f'  {"📋  SESSION SUMMARY":^{W}}')
 log('  ' + '═' * W)
 log()
 
-col_w = [24, 6, 8, 10, 10, 10, 10]
-total_w = sum(col_w) + 16
-header = (f'  │  {"Sheet":<{col_w[0]}}'
-          f'{"Rows":>{col_w[1]}}'
-          f'{"Written":>{col_w[2]}}'
-          f'{"Method":>{col_w[3]}}'
-          f'{"Pass%":>{col_w[4]}}'
-          f'{"Mean":>{col_w[5]}}'
-          f'{"Std":>{col_w[6]}}  │')
-
-log('  ┌' + '─' * total_w + '┐')
-log(header)
-log('  ├' + '─' * total_w + '┤')
 for r in all_results:
-    log(f'  │  {r["sheet"]:<{col_w[0]}}'
-        f'{r["rows"]:>{col_w[1]}}'
-        f'{r["written"]:>{col_w[2]}}'
-        f'{r["method"]:>{col_w[3]}}'
-        f'{r["pass_pct"]:>{col_w[4]}.1f}'
-        f'{r["mean_p"]:>{col_w[5]}.3f}'
-        f'{r["std_p"]:>{col_w[6]}.3f}  │')
-log('  └' + '─' * total_w + '┘')
+    bw = (f'row {r["best_wire_row"]}  NN={r["best_nn_score"]:.2f}  real={r["best_real_score"]}'
+          if r['best_wire_row'] is not None else '—')
+    log(f'  {r["sheet"]:<28}  method={r["method"]:10}  best={bw}')
 
+# ─── ЛУЧШИЙ ПРОВОД — финальный баннер ────────────────────────────────────────
 log()
-log(f'  Записано всего ячеек   : {sum(r["written"] for r in all_results)}')
-log(f'  Выходной файл          : {combined_out}')
-log(f'  ⏱  Время               : {session_elapsed:.1f} сек')
-log(f'  📁  Лог                 : logs/predict.log')
 log('  ' + '═' * W)
+log(f'  {"🏆  ЛУЧШИЙ ПРОВОД  🏆":^{W}}')
+log('  ' + '═' * W)
+log(f'  {"Excel-строка":<22}: {best_excel_row}')
+log(f'  {"Группа машины":<22}: {best_row["machine_group"]}')
+log(f'  {"Gage":<22}: [{best_row["min_gage"]:.2f} – {best_row["max_gage"]:.2f}]  (mid={best_mid_g:.2f})')
+log(f'  {"Length":<22}: [{best_row["min_len"]:.0f} – {best_row["max_len"]:.0f}]  (mid={best_mid_l:.0f})')
+log(f'  {"GCSP":<22}: {best_row["gcsp"]:.4f}  сек/шт')
 log()
+log(f'  {"NN predicted score":<22}: {nn_scores[best_idx]:.2f}')
+log(f'  {"Реальный score":<22}: {int(real_scores[best_idx])}  из {total_ops} операций')
+log()
+log(f'  Детализация по пространствам:')
+lp_total   = len(filters_dict["LEAD PREP"])
+lpfa_total = len(filters_dict["LEAD PREP FA"])
+hv_total   = len(filters_dict["High Voltage"])
+log(f'    {"LEAD PREP":<20}: {best_lp:3d}  из {lp_total:2d}  операций  ({100*best_lp//max(1,lp_total)}%)')
+log(f'    {"LEAD PREP FA":<20}: {best_lpfa:3d}  из {lpfa_total:2d}  операций  ({100*best_lpfa//max(1,lpfa_total)}%)')
+log(f'    {"High Voltage":<20}: {best_hv:3d}  из {hv_total:2d}  операций  ({100*best_hv//max(1,hv_total)}%)')
+log()
+log(f'  📁  Результат сохранён: {combined_out}')
+log(f'  ⏱  Общее время:         {session_elapsed:.1f} сек')
+log('  ' + '═' * W)
 
 _log_file.close()
