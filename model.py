@@ -45,18 +45,6 @@ def relu_grad(x):
     return (x > 0).astype(float)
 
 class MiniAI:
-    """
-    Minimal feedforward neural network trained with backpropagation + Adam.
-    Layers: [input_size → 64 → 32 → 16 → 1]
-
-    v3 fixes vs v2:
-      - BUG FIX: dropout seed не детерминирован по t (теперь настоящий случайный)
-      - BUG FIX: backward на выходном слое не применяет relu_grad (линейный)
-      - BUG FIX: нормализация X зажимает std=0 признаки корректно
-      - IMPROVEMENT: LR warmup + cosine decay в partial_fit
-      - IMPROVEMENT: group_mapping сохраняется в модели для predict
-    """
-
     def __init__(self, input_size=10, hidden=(64, 32, 16), lr=0.001,
                  dropout=0.15, epochs=2000, random_state=42,
                  log_target=True, batch_size=2048, patience=300):
@@ -316,12 +304,7 @@ class MiniAI:
         return self
 
     def partial_fit(self, X, y, epochs=500, sample_weight=None, verbose=False):
-        """
-        Инкрементальное дообучение — НЕ сбрасывает веса и нормализацию.
-        Вызывается для каждой строки CUTTING по очереди.
 
-        FIX: cosine LR decay + warmup для стабилизации обучения.
-        """
         if self.x_mean is None:
             raise RuntimeError("partial_fit требует предварительного вызова fit()")
 

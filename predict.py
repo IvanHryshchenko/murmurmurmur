@@ -1,20 +1,3 @@
-"""
-predict.py — Предсказание лучшего провода нейросетью
------------------------------------------------------
-
-КОНЦЕПЦИЯ:
-  Нейросеть обучена предсказывать детальный score (сумма пройденных операций
-  из LEAD PREP + LEAD PREP FA + High Voltage) для каждого провода из CUTTING.
-  
-  Алгоритм:
-  1. Загружаем все провода из CUTTING (575 строк)
-  2. Нейросеть предсказывает score для каждого
-  3. Выбираем провод с максимальным predicted_score
-  4. При равенстве score — выбираем провод с наименьшим GCSP (быстрее)
-  5. Записываем результат в Excel: QTY=1 для лучшего, predicted_score в столбец J,
-     отметка BEST в столбце K
-"""
-
 import os
 import datetime
 import numpy as np
@@ -199,29 +182,34 @@ for idx in top10_idx:
         f' {r["gcsp"]:>7.4f} {nn_scores[idx]:>9.2f} {int(real_scores[idx]):>6}')
 
 # ─── Записываем в Excel ───────────────────────────────────────────────────────
+# Col I = TOTAL Qty Leads — единственный входной столбец;
+# Col J (SUB TOTAL = I*H) и Col L (TOTAL TIME = J) — формулы Excel, не трогаем.
+# TOTAL values GCSD ссылается на итоговые ячейки J685/L685/L687 через формулы,
+# поэтому достаточно правильно заполнить Col I.
 
 ws_cut = wb['CUTTING']
 written_cut = 0
 
+# Обнуляем QTY (col I) для всех проводов из df_cutting
 for idx, (_, row_data) in enumerate(df_cutting.iterrows()):
-    excel_row  = int(row_data['excel_row'])
-    pred_score = float(nn_scores[idx])
-
-    # Столбец J = predicted score (аудит)
-    _write_cell(ws_cut.cell(row=excel_row, column=10), pred_score)
-    # Столбец L = реальный score (верификация)
-    ws_cut.cell(row=excel_row, column=12).value = int(real_scores[idx])
+    excel_row = int(row_data['excel_row'])
+    cell_i = ws_cut.cell(row=excel_row, column=9)
+    # Сбрасываем только если там не формула
+    if not (isinstance(cell_i.value, str) and cell_i.value.startswith('=')):
+        cell_i.value = 0
+        cell_i.number_format = '0'
     written_cut += 1
 
-# Лучший провод: QTY=1 в столбец I, BEST в столбец K
+# Лучший провод: QTY=1 в столбец I, отметка BEST в столбец K (Qty Marked Leads)
 best_excel_row = int(best_row['excel_row'])
 ws_cut.cell(row=best_excel_row, column=9).value  = 1
 ws_cut.cell(row=best_excel_row, column=9).number_format = '0'
 ws_cut.cell(row=best_excel_row, column=11).value = 'BEST'
 
 log()
-log(f'  ✅ Записано {written_cut} строк.')
-log(f'     Лучший провод отмечен QTY=1 (col I) и BEST (col K) → строка {best_excel_row}')
+log(f'  ✅ QTY проставлен для {written_cut} строк (0 для всех, 1 для лучшего).')
+log(f'     Лучший провод: QTY=1 (col I) + BEST (col K) → строка {best_excel_row}')
+log(f'     TOTAL values GCSD обновится через формулы CUTTING!J685/L685/L687.')
 
 all_results.append(dict(
     sheet='CUTTING', rows=len(df_cutting), written=written_cut,
@@ -233,44 +221,28 @@ all_results.append(dict(
 
 
 # ─── 2. TOTAL VALUES GCSD ──────────────────────────────────────────────────────
+# Этот лист содержит формулы, ссылающиеся напрямую на итоговые ячейки CUTTING
+# (J685, L685, L687) и других листов. После заполнения col I в CUTTING
+# значения пересчитаются автоматически при открытии в Excel.
+# Восстанавливаем только формулы SUM на случай если они были перезаписаны ранее.
 
 log()
 log('  ' + '=' * W)
 log('  Sheet: TOTAL values GCSD')
 log('  ' + '=' * W)
 
-df_gcsd, _ = load_and_prepare_total_gcsd(FILE_PATH, 'TOTAL values GCSD')
-df_feat_g  = create_features_total_gcsd(df_gcsd)
-
-mp     = model_path('TOTAL values GCSD')
-use_ai = os.path.exists(mp)
-
-if use_ai:
-    ai    = MiniAI.load(mp)
-    X     = df_feat_g[ai.feature_cols].values
-    preds = ai.predict(X)
-    log(f'  ✅ AI — {len(preds)} предсказаний')
-else:
-    preds = (df_gcsd['GCSD'] * df_gcsd['ADJ.']).clip(lower=0).values
-    log('  ⚠️  Нет модели — fallback GCSD×ADJ')
-
 ws_g   = wb['TOTAL values GCSD']
 E_COL, M_COL = 5, 13
 
-written_gcsd = 0
-for i, pred in enumerate(preds):
-    row_num = int(df_gcsd.iloc[i]['row_index']) + 1
-    col_1   = int(df_gcsd.iloc[i]['plant_col']) + 1
-    _write_cell(ws_g.cell(row=row_num, column=col_1), pred)
-    written_gcsd += 1
-
+# Восстанавливаем формулы итогов (на случай повреждения предыдущими запусками)
 ws_g.cell(row=13, column=E_COL).value = '=SUM(E6:E12)'
 ws_g.cell(row=23, column=E_COL).value = '=SUM(E19:E22)'
 ws_g.cell(row=27, column=M_COL).value = '=SUM(M19:M26)'
 
-log(f'  ✅ Записано {written_gcsd} ячеек')
-all_results.append(dict(sheet='TOTAL values GCSD', rows=len(df_gcsd),
-                        written=written_gcsd, method='AI' if use_ai else 'fallback',
+log(f'  ✅ Формулы SUM восстановлены. Значения CUTTING → TOTAL values GCSD')
+log(f'     обновятся автоматически через формулы при открытии Excel.')
+all_results.append(dict(sheet='TOTAL values GCSD', rows=0,
+                        written=3, method='formulas',
                         best_wire_row=None, best_nn_score=None, best_real_score=None))
 
 
@@ -377,7 +349,7 @@ for sheet_name in GENERIC_SHEETS:
                             best_wire_row=None, best_nn_score=None, best_real_score=None))
 
 
-# ─── 4. SIMPLE QTY SHEETS — QTY=1 везде ─────────────────────────────────────
+# ─── 4. SIMPLE QTY SHEETS — QTY=1 только для строк с числовым GCSP ──────────
 
 for sheet_name in SIMPLE_QTY_SHEETS:
     log()
@@ -392,40 +364,50 @@ for sheet_name in SIMPLE_QTY_SHEETS:
 
     ws = wb[sheet_name]
     all_rows = list(ws.iter_rows())
-    cur_qty  = None
-    cur_gcsp = None
+    qty_col_1  = None   # 1-based column index of QTY
+    gcsp_col_1 = None   # 1-based column index of GLOBAL SEC/PC
+    header_row = None
     qty_written = 0
 
+    # Шаг 1: найти строку-заголовок, колонки QTY и GCSP
     for row_cells in all_rows:
         vals = [c.value for c in row_cells]
-
-        # Ищем строку-заголовок по наличию 'qty'/'quantity'
-        qty_j = _col_index(vals, 'qty', 'quantity')
+        qty_j  = _col_index(vals, 'qty', 'quantity')
+        gcsp_j = _col_index(vals, 'global sec')
         if qty_j is not None:
-            cur_qty  = qty_j + 1
-            gcsp_j   = _col_index(vals, 'global sec')
-            cur_gcsp = gcsp_j   # None если колонки gcsp нет
-            continue
+            qty_col_1  = qty_j  + 1
+            gcsp_col_1 = (gcsp_j + 1) if gcsp_j is not None else None
+            header_row = row_cells[0].row
+            break
 
-        if cur_qty is None:
-            continue
-
-        # Если есть gcsp-колонка — фильтруем по gcsp > 0
-        # Если нет — ставим QTY=1 любой непустой строке
-        if cur_gcsp is not None:
-            gcsp_val = _to_float(vals[cur_gcsp]) if cur_gcsp < len(vals) else None
-            if gcsp_val is None or gcsp_val <= 0:
+    if qty_col_1 is None:
+        log(f'  ⚠️  Колонка QTY не найдена, пропуск.')
+    else:
+        log(f'  Колонка QTY: {qty_col_1}, GCSP: {gcsp_col_1}, заголовок в строке {header_row}')
+        # Шаг 2: пройти все строки ПОСЛЕ заголовка.
+        # QTY=1 ставим ТОЛЬКО если:
+        #   - в колонке GCSP стоит числовое значение > 0 (реальная строка данных)
+        #   - ни одна ячейка строки не содержит слово "total" (не строка итогов)
+        for row_cells in all_rows:
+            if row_cells[0].row <= header_row:
                 continue
-        else:
-            if not any(v is not None for v in vals):
+            vals = [c.value for c in row_cells]
+            # Пропускаем строки с "total" в любой ячейке
+            has_total = any(
+                v is not None and isinstance(v, str) and 'total' in v.lower()
+                for v in vals
+            )
+            if has_total:
                 continue
-
-        if cur_qty <= len(row_cells):
-            qcell = row_cells[cur_qty - 1]
-            existing = _to_float(qcell.value)
-            if qcell.value is None or existing == 0.0:
-                qcell.value = 1
-                qcell.number_format = '0'
+            # Пропускаем строки без числового GCSP (пустые строки, заголовки секций)
+            if gcsp_col_1 is not None:
+                gcsp_val = vals[gcsp_col_1 - 1] if gcsp_col_1 <= len(vals) else None
+                if not isinstance(gcsp_val, (int, float)) or gcsp_val <= 0:
+                    continue
+            # Ставим QTY=1
+            if qty_col_1 <= len(row_cells):
+                row_cells[qty_col_1 - 1].value = 1
+                row_cells[qty_col_1 - 1].number_format = '0'
                 qty_written += 1
 
     log(f'  ✅ QTY=1 проставлено в {qty_written} ячейках')

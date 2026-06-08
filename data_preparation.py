@@ -1,17 +1,3 @@
-"""
-data_preparation.py
--------------------
-Подготовка данных для нейросети выбора лучшего провода.
-
-КОНЦЕПЦИЯ:
-  - CUTTING: таблица нормативов резки (577 строк = варианты машина+gage+length+gcsp)
-  - LEAD PREP, LEAD PREP FA, High Voltage: таблицы операций с ограничениями по gage/length
-  - Каждая строка CUTTING «прогоняется» через все операции трёх пространств
-  - score = суммарное кол-во операций, которые провод проходит по ограничениям
-  - Нейросеть учится предсказывать этот score → лучший провод = max(predicted_score)
-  - FA Conns and wires, FA Taping, FA Miscellaneos: просто QTY=1, без модели
-"""
-
 import re
 import numpy as np
 import pandas as pd
