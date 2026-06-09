@@ -247,6 +247,20 @@ all_results.append(dict(sheet='TOTAL values GCSD', rows=0,
 
 
 # ─── 3. GENERIC SHEETS (LEAD PREP / LEAD PREP FA / High Voltage) ──────────────
+#
+# LEAD PREP / LEAD PREP FA:
+#   - Пишем только col J (QTY): 1 для активных строк, 0 для остальных.
+#   - Col K (TOTAL = J×H) — формулы не трогаем; SUMIF в K347/K349/K340 пересчитается.
+#   - Пропускаем MergedCell и ячейки с формулами.
+#
+# High Voltage:
+#   - Записываем предсказанный TOTAL в col TOTAL (нейросеть / fallback).
+
+def _is_merged(cell):
+    """Возвращает True если ячейка является частью объединения (read-only)."""
+    from openpyxl.cell.cell import MergedCell
+    return isinstance(cell, MergedCell)
+
 
 for sheet_name in GENERIC_SHEETS:
     log()
@@ -256,9 +270,84 @@ for sheet_name in GENERIC_SHEETS:
     if len(df) == 0:
         log('  ⚠️  Нет данных.')
         all_results.append(dict(sheet=sheet_name, rows=0, written=0,
-                                method='—', best_wire_row=None,
+                                method='QTY=1', best_wire_row=None,
                                 best_nn_score=None, best_real_score=None))
         continue
+
+    ws       = wb[sheet_name]
+    all_rows = list(ws.iter_rows())
+
+    # ── LEAD PREP и LEAD PREP FA: только QTY (0/1), K-формулы не трогаем ──────
+    if sheet_name in ('LEAD PREP', 'LEAD PREP FA'):
+
+        # Найдём строку заголовка и col J (QTY)
+        header_row = None
+        qty_col_1  = None   # 1-based
+
+        for row_cells in all_rows:
+            vals = [c.value for c in row_cells]
+            qty_j = _col_index(vals, 'qty', 'quantity')
+            if qty_j is not None:
+                qty_col_1  = qty_j + 1
+                header_row = row_cells[0].row
+                break
+
+        if qty_col_1 is None:
+            log('  ⚠️  Колонка QTY не найдена, пропуск.')
+            all_results.append(dict(sheet=sheet_name, rows=len(df), written=0,
+                                    method='QTY=1', best_wire_row=None,
+                                    best_nn_score=None, best_real_score=None))
+            continue
+
+        # Строки активные в оригинале (QTY > 0 по исходному файлу)
+        active_rows = set(int(rec['row_index']) for _, rec in df.iterrows()
+                          if float(rec['QTY']) > 0)
+
+        # Col N (14-я, 1-based) — пометка "не учитываю"
+        NOTE_COL_1 = 14
+
+        qty_written = 0
+        for row_cells in all_rows:
+            rnum = row_cells[0].row
+            if rnum <= header_row:
+                continue
+            row_idx_0 = rnum - 1   # 0-based, совпадает с df['row_index']
+
+            if qty_col_1 > len(row_cells):
+                continue
+            qcell = row_cells[qty_col_1 - 1]
+
+            # Пропускаем объединённые ячейки и ячейки с формулами
+            if _is_merged(qcell):
+                continue
+            if isinstance(qcell.value, str) and qcell.value.startswith('='):
+                continue
+
+            # Проверяем пометку "не учитываю" в col N
+            skip = False
+            if NOTE_COL_1 <= len(row_cells):
+                note_cell = row_cells[NOTE_COL_1 - 1]
+                if not _is_merged(note_cell):
+                    note_val = str(note_cell.value or '').lower()
+                    skip = 'не учитываю' in note_val or 'не учит' in note_val
+
+            if row_idx_0 in active_rows and not skip:
+                qcell.value = 1
+                qcell.number_format = '0'
+                qty_written += 1
+            else:
+                # Ставим 0 явно — формула K=J*H даст 0, не ошибку
+                qcell.value = 0
+                qcell.number_format = '0'
+
+        log(f'  ✅ QTY=1 для {qty_written} строк, QTY=0 для остальных.')
+        log(f'     Колонка K (TOTAL = J×H) — формулы сохранены, пересчитаются в Excel.')
+        all_results.append(dict(sheet=sheet_name, rows=len(df),
+                                written=qty_written, method='QTY=1',
+                                best_wire_row=None, best_nn_score=None, best_real_score=None))
+        continue
+
+    # ── High Voltage: нейросеть / fallback → пишем TOTAL ──────────────────────
 
     FCOLS = ['GCSP', 'QTY', 'GCSP_log', 'QTY_log', 'GCSP_x_QTY', 'GCSP_sqrt', 'QTY_sqrt']
 
@@ -278,9 +367,8 @@ for sheet_name in GENERIC_SHEETS:
     if use_ai:
         ai = MiniAI.load(mp)
         X  = df_feat[FCOLS].values
-        # Проверяем совместимость модели (могла быть обучена с другим набором фич)
         if hasattr(ai, 'x_mean') and ai.x_mean is not None and len(ai.x_mean) != X.shape[1]:
-            log(f'  ⚠️  Модель несовместима ({len(ai.x_mean)} фич vs {X.shape[1]}) — fallback')
+            log(f'  ⚠️  Модель несовместима — fallback')
             use_ai = False
         else:
             preds = ai.predict(X)
@@ -293,10 +381,8 @@ for sheet_name in GENERIC_SHEETS:
         preds[zero_qty_mask] = df['GCSP'].values[zero_qty_mask] * median_ratio
         log('  ⚠️  Нет модели — fallback')
 
-    ws       = wb[sheet_name]
-    all_rows = list(ws.iter_rows())
-    cur_tot  = cur_qty = None
-
+    # Сброс простых формул TOTAL (не SUMIF/SUM-агрегатов)
+    cur_tot = None
     for row_cells in all_rows:
         vals = [c.value for c in row_cells]
         if _is_header(vals):
@@ -304,46 +390,39 @@ for sheet_name in GENERIC_SHEETS:
                           if v is not None and 'total' in str(v).lower()
                           and 'sub' not in str(v).lower()]
             cur_tot = (candidates[-1] + 1) if candidates else None
-            qty_j   = _col_index(vals, 'qty', 'quantity')
-            cur_qty = (qty_j + 1) if qty_j is not None else None
             continue
-        if cur_tot is None:
+        if cur_tot is None or cur_tot > len(row_cells):
             continue
-        if cur_tot <= len(row_cells):
-            tcell = row_cells[cur_tot - 1]
-            if isinstance(tcell.value, str) and tcell.value.startswith('='):
-                fval_up = tcell.value.upper()
-                if not any(kw in fval_up for kw in ('SUMIF', 'SUMIFS', 'SUM(', 'COUNT', 'AVERAGE')):
-                    _write_cell(tcell, 0)
+        tcell = row_cells[cur_tot - 1]
+        if _is_merged(tcell):
+            continue
+        if isinstance(tcell.value, str) and tcell.value.startswith('='):
+            fval_up = tcell.value.upper()
+            if not any(kw in fval_up for kw in ('SUMIF', 'SUMIFS', 'SUM(', 'COUNT', 'AVERAGE')):
+                _write_cell(tcell, 0)
 
     row_pred_map = {int(rec['row_index']): {
-        'pred': float(preds[idx_pos]),
-        'gcsp': float(rec['GCSP']),
-        'qty':  float(rec['QTY']),
-        'qty_col':   int(rec['qty_col']),
+        'pred':      float(preds[idx_pos]),
+        'gcsp':      float(rec['GCSP']),
+        'qty':       float(rec['QTY']),
         'total_col': int(rec['total_col']),
     } for idx_pos, (_, rec) in enumerate(df.iterrows())}
 
-    written = qty_written = 0
+    written = 0
     for row_cells in all_rows:
         row_idx = row_cells[0].row - 1
         if row_idx not in row_pred_map:
             continue
-        meta      = row_pred_map[row_idx]
-        tot_col_1 = meta['total_col'] + 1
-        qty_col_1 = meta['qty_col']   + 1
-        if tot_col_1 <= len(row_cells):
-            _write_cell(row_cells[tot_col_1 - 1], meta['pred'])
-            written += 1
-        if meta['qty'] == 0.0 and qty_col_1 <= len(row_cells):
-            computed_qty = max(0.0, meta['pred'] / meta['gcsp']) if meta['gcsp'] > 0 else 0.0
-            qcell = row_cells[qty_col_1 - 1]
-            if _to_float(qcell.value) in (None, 0.0):
-                qcell.value = int(round(computed_qty))
-                qcell.number_format = '0'
-                qty_written += 1
+        tot_col_1 = row_pred_map[row_idx]['total_col'] + 1
+        if tot_col_1 > len(row_cells):
+            continue
+        tcell = row_cells[tot_col_1 - 1]
+        if _is_merged(tcell):
+            continue
+        _write_cell(tcell, row_pred_map[row_idx]['pred'])
+        written += 1
 
-    log(f'  ✅ {written} TOTAL, {qty_written} QTY ячеек записано')
+    log(f'  ✅ {written} TOTAL ячеек записано')
     all_results.append(dict(sheet=sheet_name, rows=len(df), written=written,
                             method='AI' if use_ai else 'fallback',
                             best_wire_row=None, best_nn_score=None, best_real_score=None))
@@ -404,10 +483,15 @@ for sheet_name in SIMPLE_QTY_SHEETS:
                 gcsp_val = vals[gcsp_col_1 - 1] if gcsp_col_1 <= len(vals) else None
                 if not isinstance(gcsp_val, (int, float)) or gcsp_val <= 0:
                     continue
-            # Ставим QTY=1
+            # Ставим QTY=1 (пропускаем MergedCell и формулы)
             if qty_col_1 <= len(row_cells):
-                row_cells[qty_col_1 - 1].value = 1
-                row_cells[qty_col_1 - 1].number_format = '0'
+                qcell = row_cells[qty_col_1 - 1]
+                if _is_merged(qcell):
+                    continue
+                if isinstance(qcell.value, str) and qcell.value.startswith('='):
+                    continue
+                qcell.value = 1
+                qcell.number_format = '0'
                 qty_written += 1
 
     log(f'  ✅ QTY=1 проставлено в {qty_written} ячейках')
