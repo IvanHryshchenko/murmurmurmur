@@ -246,191 +246,41 @@ all_results.append(dict(sheet='TOTAL values GCSD', rows=0,
                         best_wire_row=None, best_nn_score=None, best_real_score=None))
 
 
-# ─── 3. GENERIC SHEETS (LEAD PREP / LEAD PREP FA / High Voltage) ──────────────
+# ─── 3 + 4. QTY=1 для всех рабочих листов ──────────────────────────────────
 #
-# LEAD PREP / LEAD PREP FA:
-#   - Пишем только col J (QTY): 1 для активных строк, 0 для остальных.
-#   - Col K (TOTAL = J×H) — формулы не трогаем; SUMIF в K347/K349/K340 пересчитается.
-#   - Пропускаем MergedCell и ячейки с формулами.
+# Правило одинаково для всех 6 листов:
+#   QTY = 1  если:  числовой GCSP > 0  И  нет пометки "не учитываю"
+#   QTY = 0  иначе  (явный 0 чтобы формула K=J*H не давала пустоту)
 #
-# High Voltage:
-#   - Записываем предсказанный TOTAL в col TOTAL (нейросеть / fallback).
+# "не учитываю" встречается только в LEAD PREP (col N = 14).
+# LEAD PREP FA идентичен по структуре, но пометки там нет.
+# Для остальных листов (High Voltage, FA Conns and wires, FA Taping,
+# FA Miscellaneos) пометки тоже нет — просто проверяем числовой GCSP.
+#
+# Колонки K/TOTAL содержат формулы =J*H — НЕ трогаем их.
+# TOTAL values GCSD получает значения через цепочку формул автоматически.
+
+from openpyxl.cell.cell import MergedCell
 
 def _is_merged(cell):
-    """Возвращает True если ячейка является частью объединения (read-only)."""
-    from openpyxl.cell.cell import MergedCell
     return isinstance(cell, MergedCell)
 
+# Конфигурация каждого листа:
+#   gcsp_col  — 1-based колонка GLOBAL SEC/PC (числовое время)
+#   qty_col   — 1-based колонка QTY (куда пишем 0 или 1)
+#   header_row — строка-заголовок (данные начинаются со следующей)
+#   note_col  — 1-based колонка с "не учитываю" (None если нет)
 
-for sheet_name in GENERIC_SHEETS:
-    log()
-    log(f'  Sheet: {sheet_name}')
+QTY_SHEETS_CFG = [
+    ('LEAD PREP',          {'gcsp_col':  8, 'qty_col': 10, 'header_row': 2, 'note_col': 14}),
+    ('LEAD PREP FA',       {'gcsp_col':  8, 'qty_col': 10, 'header_row': 2, 'note_col': 14}),
+    ('High Voltage',       {'gcsp_col':  8, 'qty_col': 10, 'header_row': 4, 'note_col': None}),
+    ('FA Conns and wires', {'gcsp_col': 17, 'qty_col': 19, 'header_row': 3, 'note_col': None}),
+    ('FA Taping',          {'gcsp_col':  7, 'qty_col':  9, 'header_row': 2, 'note_col': None}),
+    ('FA Miscellaneos',    {'gcsp_col':  8, 'qty_col': 10, 'header_row': 2, 'note_col': None}),
+]
 
-    df, _ = load_sheet_dynamic(FILE_PATH, sheet_name)
-    if len(df) == 0:
-        log('  ⚠️  Нет данных.')
-        all_results.append(dict(sheet=sheet_name, rows=0, written=0,
-                                method='QTY=1', best_wire_row=None,
-                                best_nn_score=None, best_real_score=None))
-        continue
-
-    ws       = wb[sheet_name]
-    all_rows = list(ws.iter_rows())
-
-    # ── LEAD PREP и LEAD PREP FA: только QTY (0/1), K-формулы не трогаем ──────
-    if sheet_name in ('LEAD PREP', 'LEAD PREP FA'):
-
-        # Найдём строку заголовка и col J (QTY)
-        header_row = None
-        qty_col_1  = None   # 1-based
-
-        for row_cells in all_rows:
-            vals = [c.value for c in row_cells]
-            qty_j = _col_index(vals, 'qty', 'quantity')
-            if qty_j is not None:
-                qty_col_1  = qty_j + 1
-                header_row = row_cells[0].row
-                break
-
-        if qty_col_1 is None:
-            log('  ⚠️  Колонка QTY не найдена, пропуск.')
-            all_results.append(dict(sheet=sheet_name, rows=len(df), written=0,
-                                    method='QTY=1', best_wire_row=None,
-                                    best_nn_score=None, best_real_score=None))
-            continue
-
-        # Строки активные в оригинале (QTY > 0 по исходному файлу)
-        active_rows = set(int(rec['row_index']) for _, rec in df.iterrows()
-                          if float(rec['QTY']) > 0)
-
-        # Col N (14-я, 1-based) — пометка "не учитываю"
-        NOTE_COL_1 = 14
-
-        qty_written = 0
-        for row_cells in all_rows:
-            rnum = row_cells[0].row
-            if rnum <= header_row:
-                continue
-            row_idx_0 = rnum - 1   # 0-based, совпадает с df['row_index']
-
-            if qty_col_1 > len(row_cells):
-                continue
-            qcell = row_cells[qty_col_1 - 1]
-
-            # Пропускаем объединённые ячейки и ячейки с формулами
-            if _is_merged(qcell):
-                continue
-            if isinstance(qcell.value, str) and qcell.value.startswith('='):
-                continue
-
-            # Проверяем пометку "не учитываю" в col N
-            skip = False
-            if NOTE_COL_1 <= len(row_cells):
-                note_cell = row_cells[NOTE_COL_1 - 1]
-                if not _is_merged(note_cell):
-                    note_val = str(note_cell.value or '').lower()
-                    skip = 'не учитываю' in note_val or 'не учит' in note_val
-
-            if row_idx_0 in active_rows and not skip:
-                qcell.value = 1
-                qcell.number_format = '0'
-                qty_written += 1
-            else:
-                # Ставим 0 явно — формула K=J*H даст 0, не ошибку
-                qcell.value = 0
-                qcell.number_format = '0'
-
-        log(f'  ✅ QTY=1 для {qty_written} строк, QTY=0 для остальных.')
-        log(f'     Колонка K (TOTAL = J×H) — формулы сохранены, пересчитаются в Excel.')
-        all_results.append(dict(sheet=sheet_name, rows=len(df),
-                                written=qty_written, method='QTY=1',
-                                best_wire_row=None, best_nn_score=None, best_real_score=None))
-        continue
-
-    # ── High Voltage: нейросеть / fallback → пишем TOTAL ──────────────────────
-
-    FCOLS = ['GCSP', 'QTY', 'GCSP_log', 'QTY_log', 'GCSP_x_QTY', 'GCSP_sqrt', 'QTY_sqrt']
-
-    def _make_feat(df_rows):
-        d = df_rows.copy()
-        d['GCSP_log']   = np.log1p(d['GCSP'])
-        d['QTY_log']    = np.log1p(d['QTY'].clip(lower=0))
-        d['GCSP_x_QTY'] = d['GCSP'] * d['QTY']
-        d['GCSP_sqrt']  = np.sqrt(d['GCSP'].clip(lower=0))
-        d['QTY_sqrt']   = np.sqrt(d['QTY'].clip(lower=0))
-        return d
-
-    df_feat = _make_feat(df)
-    mp      = model_path(sheet_name)
-    use_ai  = os.path.exists(mp)
-
-    if use_ai:
-        ai = MiniAI.load(mp)
-        X  = df_feat[FCOLS].values
-        if hasattr(ai, 'x_mean') and ai.x_mean is not None and len(ai.x_mean) != X.shape[1]:
-            log(f'  ⚠️  Модель несовместима — fallback')
-            use_ai = False
-        else:
-            preds = ai.predict(X)
-            log(f'  ✅ AI — {len(preds)} предсказаний')
-    if not use_ai:
-        known = df[df['TOTAL'] > 0]
-        median_ratio = float((known['TOTAL'] / known['GCSP']).median()) if len(known) > 0 else 1.0
-        preds = (df['GCSP'] * df['QTY'].clip(lower=1)).values.copy()
-        zero_qty_mask = df['QTY'].values == 0.0
-        preds[zero_qty_mask] = df['GCSP'].values[zero_qty_mask] * median_ratio
-        log('  ⚠️  Нет модели — fallback')
-
-    # Сброс простых формул TOTAL (не SUMIF/SUM-агрегатов)
-    cur_tot = None
-    for row_cells in all_rows:
-        vals = [c.value for c in row_cells]
-        if _is_header(vals):
-            candidates = [j for j, v in enumerate(vals)
-                          if v is not None and 'total' in str(v).lower()
-                          and 'sub' not in str(v).lower()]
-            cur_tot = (candidates[-1] + 1) if candidates else None
-            continue
-        if cur_tot is None or cur_tot > len(row_cells):
-            continue
-        tcell = row_cells[cur_tot - 1]
-        if _is_merged(tcell):
-            continue
-        if isinstance(tcell.value, str) and tcell.value.startswith('='):
-            fval_up = tcell.value.upper()
-            if not any(kw in fval_up for kw in ('SUMIF', 'SUMIFS', 'SUM(', 'COUNT', 'AVERAGE')):
-                _write_cell(tcell, 0)
-
-    row_pred_map = {int(rec['row_index']): {
-        'pred':      float(preds[idx_pos]),
-        'gcsp':      float(rec['GCSP']),
-        'qty':       float(rec['QTY']),
-        'total_col': int(rec['total_col']),
-    } for idx_pos, (_, rec) in enumerate(df.iterrows())}
-
-    written = 0
-    for row_cells in all_rows:
-        row_idx = row_cells[0].row - 1
-        if row_idx not in row_pred_map:
-            continue
-        tot_col_1 = row_pred_map[row_idx]['total_col'] + 1
-        if tot_col_1 > len(row_cells):
-            continue
-        tcell = row_cells[tot_col_1 - 1]
-        if _is_merged(tcell):
-            continue
-        _write_cell(tcell, row_pred_map[row_idx]['pred'])
-        written += 1
-
-    log(f'  ✅ {written} TOTAL ячеек записано')
-    all_results.append(dict(sheet=sheet_name, rows=len(df), written=written,
-                            method='AI' if use_ai else 'fallback',
-                            best_wire_row=None, best_nn_score=None, best_real_score=None))
-
-
-# ─── 4. SIMPLE QTY SHEETS — QTY=1 только для строк с числовым GCSP ──────────
-
-for sheet_name in SIMPLE_QTY_SHEETS:
+for sheet_name, cfg in QTY_SHEETS_CFG:
     log()
     log(f'  Sheet: {sheet_name}  [QTY=1 mode]')
 
@@ -441,63 +291,64 @@ for sheet_name in SIMPLE_QTY_SHEETS:
                                 best_nn_score=None, best_real_score=None))
         continue
 
-    ws = wb[sheet_name]
-    all_rows = list(ws.iter_rows())
-    qty_col_1  = None   # 1-based column index of QTY
-    gcsp_col_1 = None   # 1-based column index of GLOBAL SEC/PC
-    header_row = None
-    qty_written = 0
+    ws         = wb[sheet_name]
+    gcsp_col   = cfg['gcsp_col']
+    qty_col    = cfg['qty_col']
+    header_row = cfg['header_row']
+    note_col   = cfg['note_col']
 
-    # Шаг 1: найти строку-заголовок, колонки QTY и GCSP
-    for row_cells in all_rows:
-        vals = [c.value for c in row_cells]
-        qty_j  = _col_index(vals, 'qty', 'quantity')
-        gcsp_j = _col_index(vals, 'global sec')
-        if qty_j is not None:
-            qty_col_1  = qty_j  + 1
-            gcsp_col_1 = (gcsp_j + 1) if gcsp_j is not None else None
-            header_row = row_cells[0].row
-            break
+    qty_written = qty_zeroed = 0
 
-    if qty_col_1 is None:
-        log(f'  ⚠️  Колонка QTY не найдена, пропуск.')
-    else:
-        log(f'  Колонка QTY: {qty_col_1}, GCSP: {gcsp_col_1}, заголовок в строке {header_row}')
-        # Шаг 2: пройти все строки ПОСЛЕ заголовка.
-        # QTY=1 ставим ТОЛЬКО если:
-        #   - в колонке GCSP стоит числовое значение > 0 (реальная строка данных)
-        #   - ни одна ячейка строки не содержит слово "total" (не строка итогов)
-        for row_cells in all_rows:
-            if row_cells[0].row <= header_row:
-                continue
-            vals = [c.value for c in row_cells]
-            # Пропускаем строки с "total" в любой ячейке
-            has_total = any(
-                v is not None and isinstance(v, str) and 'total' in v.lower()
-                for v in vals
-            )
-            if has_total:
-                continue
-            # Пропускаем строки без числового GCSP (пустые строки, заголовки секций)
-            if gcsp_col_1 is not None:
-                gcsp_val = vals[gcsp_col_1 - 1] if gcsp_col_1 <= len(vals) else None
-                if not isinstance(gcsp_val, (int, float)) or gcsp_val <= 0:
-                    continue
-            # Ставим QTY=1 (пропускаем MergedCell и формулы)
-            if qty_col_1 <= len(row_cells):
-                qcell = row_cells[qty_col_1 - 1]
-                if _is_merged(qcell):
-                    continue
-                if isinstance(qcell.value, str) and qcell.value.startswith('='):
-                    continue
-                qcell.value = 1
-                qcell.number_format = '0'
-                qty_written += 1
+    for row_cells in ws.iter_rows(min_row=header_row + 1):
+        rnum = row_cells[0].row
 
-    log(f'  ✅ QTY=1 проставлено в {qty_written} ячейках')
-    all_results.append(dict(sheet=sheet_name, rows=qty_written, written=qty_written,
-                            method='QTY=1', best_wire_row=None,
-                            best_nn_score=None, best_real_score=None))
+        # ── Пропускаем полностью пустые строки (за границей данных) ──────────
+        row_has_data = any(
+            not _is_merged(c) and c.value is not None
+            for c in row_cells
+            if not (qty_col <= len(row_cells) and c.column == qty_col)
+        )
+        if not row_has_data:
+            continue
+
+        # ── Ячейка QTY ────────────────────────────────────────────────────────
+        if qty_col > len(row_cells):
+            continue
+        qcell = row_cells[qty_col - 1]
+        if _is_merged(qcell):
+            continue
+        if isinstance(qcell.value, str) and qcell.value.startswith('='):
+            continue   # формула-агрегат — не трогаем
+
+        # ── Проверяем GCSP ────────────────────────────────────────────────────
+        if gcsp_col > len(row_cells):
+            qcell.value = 0
+            continue
+        gcsp_cell = row_cells[gcsp_col - 1]
+        gcsp_val  = None if _is_merged(gcsp_cell) else gcsp_cell.value
+        has_gcsp  = isinstance(gcsp_val, (int, float)) and gcsp_val > 0
+
+        # ── Проверяем пометку "не учитываю" ──────────────────────────────────
+        skip = False
+        if note_col and note_col <= len(row_cells):
+            nc = row_cells[note_col - 1]
+            if not _is_merged(nc) and nc.value:
+                skip = 'не учитываю' in str(nc.value).lower()
+
+        # ── Записываем ───────────────────────────────────────────────────────
+        if has_gcsp and not skip:
+            qcell.value = 1
+            qcell.number_format = '0'
+            qty_written += 1
+        else:
+            qcell.value = 0
+            qcell.number_format = '0'
+            qty_zeroed += 1
+
+    log(f'  ✅ QTY=1: {qty_written} строк,  QTY=0: {qty_zeroed} строк')
+    all_results.append(dict(sheet=sheet_name, rows=qty_written + qty_zeroed,
+                            written=qty_written, method='QTY=1',
+                            best_wire_row=None, best_nn_score=None, best_real_score=None))
 
 
 # ─── СОХРАНЕНИЕ И ИТОГ ────────────────────────────────────────────────────────
