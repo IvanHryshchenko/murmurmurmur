@@ -54,8 +54,6 @@ def _write_cell(cell, value, fmt=NUMBER_FMT):
     cell.number_format = fmt
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-
 session_start = datetime.datetime.now()
 W = 70
 
@@ -69,8 +67,6 @@ all_results = []
 wb = load_workbook(FILE_PATH)
 
 
-# ─── 1. CUTTING — поиск лучшего провода ──────────────────────────────────────
-
 log()
 log('  ' + '=' * W)
 log('  CUTTING — нейросеть предсказывает детальный score для каждого провода')
@@ -79,15 +75,12 @@ log()
 
 df_cutting = load_cutting_sheet(FILE_PATH, 'CUTTING')
 log(f'  Загружено {len(df_cutting)} проводов из CUTTING')
-
-# Загружаем фильтры (для верификации реального score)
 log()
 log('  Загрузка фильтров операций...')
 filters_dict = load_all_filters(FILE_PATH)
 total_ops = sum(len(v) for v in filters_dict.values())
 log(f'  Итого операций с ограничениями: {total_ops}')
 
-# Вычисляем реальный score для каждого провода (верификация)
 real_scores = []
 real_lp = []
 real_lpfa = []
@@ -106,8 +99,6 @@ real_scores = np.array(real_scores, dtype=float)
 log()
 log(f'  Реальный score: min={real_scores.min():.0f}  max={real_scores.max():.0f}'
     f'  mean={real_scores.mean():.1f}')
-
-# ─── Нейросеть ───────────────────────────────────────────────────────────────
 
 mp     = model_path('CUTTING')
 use_ai = os.path.exists(mp)
@@ -131,15 +122,14 @@ if use_ai:
     log(f'     mean={nn_scores.mean():.2f}  min={nn_scores.min():.2f}  max={nn_scores.max():.2f}')
     log(f'     MAE vs реальный score: {mae:.3f}')
 else:
-    # Fallback: используем реальный score напрямую
     log('  ⚠️  Модель не найдена — fallback (реальный score из правил)')
     nn_scores = real_scores.copy()
 
-# ─── ВЫБОР ЛУЧШЕГО ПРОВОДА ────────────────────────────────────────────────────
-# Критерий: max(predicted_score), при равенстве — min(gcsp)
+
+
 
 gcsp_arr = df_cutting['gcsp'].values
-ranking  = nn_scores * 10000.0 - gcsp_arr   # × 10000 гарантирует приоритет score над gcsp
+ranking  = nn_scores * 10000.0 - gcsp_arr  
 best_idx = int(np.argmax(ranking))
 best_row = df_cutting.iloc[best_idx]
 
@@ -167,7 +157,6 @@ log(f'    LEAD PREP:    {best_lp:4d}  из {len(filters_dict["LEAD PREP"])}  о�
 log(f'    LEAD PREP FA: {best_lpfa:4d}  из {len(filters_dict["LEAD PREP FA"])} операций')
 log(f'    High Voltage: {best_hv:4d}  из {len(filters_dict["High Voltage"])}  операций')
 
-# ─── Топ-10 ───────────────────────────────────────────────────────────────────
 
 log()
 log('  Топ-10 проводов по предсказанию нейросети:')
@@ -181,26 +170,18 @@ for idx in top10_idx:
         f' {r["min_len"]:>7.0f} {r["max_len"]:>8.0f}'
         f' {r["gcsp"]:>7.4f} {nn_scores[idx]:>9.2f} {int(real_scores[idx]):>6}')
 
-# ─── Записываем в Excel ───────────────────────────────────────────────────────
-# Col I = TOTAL Qty Leads — единственный входной столбец;
-# Col J (SUB TOTAL = I*H) и Col L (TOTAL TIME = J) — формулы Excel, не трогаем.
-# TOTAL values GCSD ссылается на итоговые ячейки J685/L685/L687 через формулы,
-# поэтому достаточно правильно заполнить Col I.
 
 ws_cut = wb['CUTTING']
 written_cut = 0
 
-# Обнуляем QTY (col I) для всех проводов из df_cutting
 for idx, (_, row_data) in enumerate(df_cutting.iterrows()):
     excel_row = int(row_data['excel_row'])
     cell_i = ws_cut.cell(row=excel_row, column=9)
-    # Сбрасываем только если там не формула
     if not (isinstance(cell_i.value, str) and cell_i.value.startswith('=')):
         cell_i.value = 0
         cell_i.number_format = '0'
     written_cut += 1
 
-# Лучший провод: QTY=1 в столбец I, отметка BEST в столбец K (Qty Marked Leads)
 best_excel_row = int(best_row['excel_row'])
 ws_cut.cell(row=best_excel_row, column=9).value  = 1
 ws_cut.cell(row=best_excel_row, column=9).number_format = '0'
@@ -219,13 +200,6 @@ all_results.append(dict(
     best_real_score=int(real_scores[best_idx]),
 ))
 
-
-# ─── 2. TOTAL VALUES GCSD ──────────────────────────────────────────────────────
-# Этот лист содержит формулы, ссылающиеся напрямую на итоговые ячейки CUTTING
-# (J685, L685, L687) и других листов. После заполнения col I в CUTTING
-# значения пересчитаются автоматически при открытии в Excel.
-# Восстанавливаем только формулы SUM на случай если они были перезаписаны ранее.
-
 log()
 log('  ' + '=' * W)
 log('  Sheet: TOTAL values GCSD')
@@ -234,7 +208,6 @@ log('  ' + '=' * W)
 ws_g   = wb['TOTAL values GCSD']
 E_COL, M_COL = 5, 13
 
-# Восстанавливаем формулы итогов (на случай повреждения предыдущими запусками)
 ws_g.cell(row=13, column=E_COL).value = '=SUM(E6:E12)'
 ws_g.cell(row=23, column=E_COL).value = '=SUM(E19:E22)'
 ws_g.cell(row=27, column=M_COL).value = '=SUM(M19:M26)'
@@ -245,31 +218,11 @@ all_results.append(dict(sheet='TOTAL values GCSD', rows=0,
                         written=3, method='formulas',
                         best_wire_row=None, best_nn_score=None, best_real_score=None))
 
-
-# ─── 3 + 4. QTY=1 для всех рабочих листов ──────────────────────────────────
-#
-# Правило одинаково для всех 6 листов:
-#   QTY = 1  если:  числовой GCSP > 0  И  нет пометки "не учитываю"
-#   QTY = 0  иначе  (явный 0 чтобы формула K=J*H не давала пустоту)
-#
-# "не учитываю" встречается только в LEAD PREP (col N = 14).
-# LEAD PREP FA идентичен по структуре, но пометки там нет.
-# Для остальных листов (High Voltage, FA Conns and wires, FA Taping,
-# FA Miscellaneos) пометки тоже нет — просто проверяем числовой GCSP.
-#
-# Колонки K/TOTAL содержат формулы =J*H — НЕ трогаем их.
-# TOTAL values GCSD получает значения через цепочку формул автоматически.
-
 from openpyxl.cell.cell import MergedCell
 
 def _is_merged(cell):
     return isinstance(cell, MergedCell)
 
-# Конфигурация каждого листа:
-#   gcsp_col  — 1-based колонка GLOBAL SEC/PC (числовое время)
-#   qty_col   — 1-based колонка QTY (куда пишем 0 или 1)
-#   header_row — строка-заголовок (данные начинаются со следующей)
-#   note_col  — 1-based колонка с "не учитываю" (None если нет)
 
 QTY_SHEETS_CFG = [
     ('LEAD PREP',          {'gcsp_col':  8, 'qty_col': 10, 'header_row': 2, 'note_col': 14}),
@@ -302,7 +255,6 @@ for sheet_name, cfg in QTY_SHEETS_CFG:
     for row_cells in ws.iter_rows(min_row=header_row + 1):
         rnum = row_cells[0].row
 
-        # ── Пропускаем полностью пустые строки (за границей данных) ──────────
         row_has_data = any(
             not _is_merged(c) and c.value is not None
             for c in row_cells
@@ -311,16 +263,14 @@ for sheet_name, cfg in QTY_SHEETS_CFG:
         if not row_has_data:
             continue
 
-        # ── Ячейка QTY ────────────────────────────────────────────────────────
         if qty_col > len(row_cells):
             continue
         qcell = row_cells[qty_col - 1]
         if _is_merged(qcell):
             continue
         if isinstance(qcell.value, str) and qcell.value.startswith('='):
-            continue   # формула-агрегат — не трогаем
+            continue
 
-        # ── Проверяем GCSP ────────────────────────────────────────────────────
         if gcsp_col > len(row_cells):
             qcell.value = 0
             continue
@@ -328,14 +278,13 @@ for sheet_name, cfg in QTY_SHEETS_CFG:
         gcsp_val  = None if _is_merged(gcsp_cell) else gcsp_cell.value
         has_gcsp  = isinstance(gcsp_val, (int, float)) and gcsp_val > 0
 
-        # ── Проверяем пометку "не учитываю" ──────────────────────────────────
         skip = False
         if note_col and note_col <= len(row_cells):
             nc = row_cells[note_col - 1]
             if not _is_merged(nc) and nc.value:
                 skip = 'не учитываю' in str(nc.value).lower()
 
-        # ── Записываем ───────────────────────────────────────────────────────
+   
         if has_gcsp and not skip:
             qcell.value = 1
             qcell.number_format = '0'
@@ -351,7 +300,6 @@ for sheet_name, cfg in QTY_SHEETS_CFG:
                             best_wire_row=None, best_nn_score=None, best_real_score=None))
 
 
-# ─── СОХРАНЕНИЕ И ИТОГ ────────────────────────────────────────────────────────
 
 combined_out = os.path.join(OUTPUT_DIR, 'RESULT_ALL_SHEETS.xlsx')
 wb.save(combined_out)
@@ -369,7 +317,6 @@ for r in all_results:
           if r['best_wire_row'] is not None else '—')
     log(f'  {r["sheet"]:<28}  method={r["method"]:10}  best={bw}')
 
-# ─── ЛУЧШИЙ ПРОВОД — финальный баннер ────────────────────────────────────────
 log()
 log('  ' + '═' * W)
 log(f'  {"🏆  ЛУЧШИЙ ПРОВОД  🏆":^{W}}')

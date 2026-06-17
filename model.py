@@ -11,7 +11,6 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 
 class _Tee:
-    """Write to both stdout and a log file simultaneously."""
     def __init__(self, path):
         self._file = open(path, 'a', encoding='utf-8')
 
@@ -34,7 +33,6 @@ _tee = _Tee(LOG_FILE)
 
 
 def log(text=''):
-    """Print to stdout AND append to logs/training.log."""
     _tee.write(text + '\n')
 
 def relu(x):
@@ -61,8 +59,6 @@ class MiniAI:
         self.x_mean = self.x_std = None
         self.y_mean = self.y_std = None
         self.feature_cols = None
-
-        # Сохраняем mapping групп машин (для CUTTING predict)
         self.group_mapping    = None
         self.group_global_mean = None
 
@@ -87,7 +83,6 @@ class MiniAI:
         self.t  = 0
 
     def _forward(self, X, training=False):
-        # FIX: используем глобальный _rng_dropout — настоящий случайный дропаут
         activations, masks, current = [X], [], X
         for i, (W, b) in enumerate(zip(self.W, self.b)):
             z = current @ W + b
@@ -101,23 +96,22 @@ class MiniAI:
                 masks.append(mask)
                 current = a
             else:
-                # FIX: выходной слой линейный — нет relu, нет маски dropout
+            
                 current = z
                 masks.append(np.ones_like(z))
             activations.append(current)
         return activations, masks
 
     def _backward_weighted(self, activations, masks, dA_init):
-        """Backward pass с уже взвешенным dA."""
         dA = dA_init
         dW_list, db_list = [], []
         for i in reversed(range(len(self.W))):
             A_prev = activations[i]
-            # FIX: выходной слой (i == len-1) — линейный, не применяем relu_grad
+
             if i < len(self.W) - 1:
                 dZ = dA * relu_grad(activations[i+1]) * masks[i]
             else:
-                dZ = dA  # линейный выход: dZ = dA (производная линейной = 1)
+                dZ = dA  
             dW_list.insert(0, A_prev.T @ dZ)
             db_list.insert(0, dZ.sum(axis=0, keepdims=True))
             dA = dZ @ self.W[i].T
@@ -139,7 +133,6 @@ class MiniAI:
                          (np.sqrt(self.vb[i] / (1 - beta2**self.t)) + eps)
 
     def _norm_x(self, X):
-        # FIX: нулевой std заменяем на 1 (не на 1e-8) чтобы не усиливать шум
         std = np.where(self.x_std < 1e-10, 1.0, self.x_std)
         return (X - self.x_mean) / std
 
@@ -316,7 +309,6 @@ class MiniAI:
             sw = np.ones((n, 1)) if sample_weight is None else \
                  (np.asarray(sample_weight, dtype=float) / (np.asarray(sample_weight).mean() + 1e-10)).reshape(-1, 1)
             for ep in range(epochs):
-                # Cosine decay
                 lr = self.lr * 0.5 * (1 + np.cos(np.pi * ep / epochs))
                 acts, masks = self._forward(Xs, training=True)
                 dA = (acts[-1] - ys) * sw * 2.0 / max(n, 1)
@@ -345,7 +337,6 @@ class MiniAI:
         patience = max(50, epochs // 5)
 
         for ep in range(1, epochs + 1):
-            # Cosine decay LR
             lr = self.lr * 0.5 * (1 + np.cos(np.pi * ep / epochs))
             perm = rng_b.permutation(len(tr_i))
             for start in range(0, len(tr_i), bs):

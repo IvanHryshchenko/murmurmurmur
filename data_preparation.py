@@ -4,8 +4,6 @@ import pandas as pd
 from openpyxl import load_workbook
 
 
-# ─── ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ─────────────────────────────────────────────────
-
 def _to_float(v):
     try:
         f = float(v)
@@ -51,7 +49,6 @@ def _parse_mm2(val):
         return None
 
 
-# ─── CUTTING ──────────────────────────────────────────────────────────────────
 
 def load_cutting_sheet(file_path, sheet_name='CUTTING'):
     wb = load_workbook(file_path, read_only=True, data_only=True)
@@ -122,21 +119,7 @@ def _encode_machine_group(df_cutting):
     return encoded, mapping, global_mean
 
 
-# ─── ЗАГРУЗКА ФИЛЬТРОВ ────────────────────────────────────────────────────────
-#
-# Каждая строка фильтра = одна операция с ограничениями по gage и/или length.
-# Провод «проходит» операцию, если его параметры попадают в ограничения.
-# Строки без ограничений (min_gage=None, max_gage=None, min_len=None, max_len=None)
-# НЕ учитываются в score, так как они всегда проходят и не дают информации.
-#
-# score = sum(проходит ли провод каждую операцию) по всем трём пространствам
-
 def _load_filter_rows(file_path, sheet_name, gage_cols=(4, 5), len_cols=None):
-    """
-    Загружает операции из листа как набор ограничений.
-    Возвращает список dict: {min_gage, max_gage, min_len, max_len, gcsp}
-    Включает ТОЛЬКО строки у которых есть хотя бы одно ограничение.
-    """
     wb  = load_workbook(file_path, read_only=True, data_only=True)
     ws  = wb[sheet_name]
     rows = list(ws.iter_rows(values_only=True))
@@ -161,7 +144,6 @@ def _load_filter_rows(file_path, sheet_name, gage_cols=(4, 5), len_cols=None):
         min_l = _to_float(vals[lc1]  if lc1 is not None and len(vals) > lc1 else None)
         max_l = _to_float(vals[lc2]  if lc2 is not None and len(vals) > lc2 else None)
 
-        # Берём только строки с реальными ограничениями
         has_gage = (min_g is not None or max_g is not None)
         has_len  = (min_l is not None or max_l is not None)
         if not (has_gage or has_len):
@@ -177,11 +159,6 @@ def _load_filter_rows(file_path, sheet_name, gage_cols=(4, 5), len_cols=None):
 
 
 def load_all_filters(file_path):
-    """
-    Загружает ограничения из трёх рабочих пространств.
-    LEAD PREP / LEAD PREP FA: ограничения по gage (col 4, 5)
-    High Voltage: ограничения по length (col 5, 6) И по gage в формате mm² (col 5, 6)
-    """
     filters = {
         'LEAD PREP':    _load_filter_rows(file_path, 'LEAD PREP',    gage_cols=(4, 5)),
         'LEAD PREP FA': _load_filter_rows(file_path, 'LEAD PREP FA', gage_cols=(4, 5)),
@@ -193,16 +170,10 @@ def load_all_filters(file_path):
 
 
 def wire_passes_operation(mid_gage, mid_len, op):
-    """
-    Проверяет: провод с (mid_gage, mid_len) проходит ли ограничения операции.
-    Ограничения по gage и length независимы — оба должны выполняться.
-    """
-    # Ограничения по gage
     if op['min_gage'] is not None and mid_gage < op['min_gage']:
         return False
     if op['max_gage'] is not None and mid_gage > op['max_gage']:
         return False
-    # Ограничения по length
     if op['min_len'] is not None and mid_len < op['min_len']:
         return False
     if op['max_len'] is not None and mid_len > op['max_len']:
@@ -211,18 +182,11 @@ def wire_passes_operation(mid_gage, mid_len, op):
 
 
 def compute_detailed_score(mid_gage, mid_len, filters_dict):
-    """
-    Считает score для провода: сколько операций он проходит в каждом пространстве.
-    Возвращает (total, score_lp, score_lpfa, score_hv).
-    total = score_lp + score_lpfa + score_hv
-    """
     s_lp   = sum(wire_passes_operation(mid_gage, mid_len, op) for op in filters_dict['LEAD PREP'])
     s_lpfa = sum(wire_passes_operation(mid_gage, mid_len, op) for op in filters_dict['LEAD PREP FA'])
     s_hv   = sum(wire_passes_operation(mid_gage, mid_len, op) for op in filters_dict['High Voltage'])
     return s_lp + s_lpfa + s_hv, s_lp, s_lpfa, s_hv
 
-
-# ─── ФИЧИ ДЛЯ НЕЙРОСЕТИ (CUTTING) ────────────────────────────────────────────
 
 def create_cutting_features(df, group_mapping=None, group_global_mean=None):
     df = df.copy()
@@ -270,21 +234,15 @@ FEATURE_COLS_CUTTING = [
     'gage_x_len', 'gcsp_log',
 ]
 
-
-# ─── ЛИСТЫ ────────────────────────────────────────────────────────────────────
-
-# Листы для которых нейросеть предсказывает QTY/TOTAL
 GENERIC_SHEETS = [
     'LEAD PREP', 'LEAD PREP FA', 'High Voltage',
 ]
 
-# Листы где просто ставим QTY=1 (без модели)
 SIMPLE_QTY_SHEETS = [
     'FA Conns and wires', 'FA Taping', 'FA Miscellaneos',
 ]
 
 
-# ─── ОСТАЛЬНЫЕ ЛИСТЫ (TOTAL GCSD и generic) ──────────────────────────────────
 
 _GCSD_SKIP_LABELS = {'total', 'per harness', 'part number', 'total time',
                      'wires number', '(min)', '%', 'summary', 'high voltage'}

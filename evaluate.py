@@ -42,8 +42,6 @@ def rank_of(idx, score_arr):
     return int(pos[0]) + 1 if len(pos) > 0 else len(score_arr)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-
 session_start = datetime.datetime.now()
 
 log()
@@ -52,8 +50,6 @@ log(f'  {"🔬  WIRE SELECTION — Algorithm vs Neural Network":^{W}}')
 log(f'  {"Started: " + session_start.strftime("%Y-%m-%d  %H:%M:%S"):^{W}}')
 log('  ' + '═' * W)
 
-
-# ─── 1. Загрузка данных ───────────────────────────────────────────────────────
 
 log()
 log('  Загрузка CUTTING...')
@@ -69,8 +65,6 @@ hv_total   = len(filters_dict['High Voltage'])
 total_ops  = lp_total + lpfa_total + hv_total
 log(f'  Итого операций: {total_ops}  (LP={lp_total}  LPFA={lpfa_total}  HV={hv_total})')
 
-
-# ─── 2. Реальный score для каждого провода ────────────────────────────────────
 
 log()
 log('  Вычисление реального score для всех проводов...')
@@ -101,8 +95,6 @@ log(f'  Score: min={real_score.min():.0f}  max={real_score.max():.0f}  '
     f'mean={real_score.mean():.1f}  std={real_score.std():.1f}')
 
 
-# ─── 3. Детерминированные алгоритмы ───────────────────────────────────────────
-
 def algo_select(ranking_arr):
     """Выбирает индекс провода с максимальным значением ranking_arr."""
     return int(np.argmax(ranking_arr))
@@ -110,11 +102,11 @@ def algo_select(ranking_arr):
 
 algorithms = {
     'A1_MAX_SCORE':     real_score,
-    'A2_MAX_SCORE_FAST': real_score * 10000.0 - gcsp_arr,       # как в NN-ranking
+    'A2_MAX_SCORE_FAST': real_score * 10000.0 - gcsp_arr,    
     'A3_MAX_LP':        real_lp,
     'A4_MAX_LPFA':      real_lpfa,
     'A5_MAX_HV':        real_hv,
-    'A6_MIN_GCSP':      -gcsp_arr,                              # минимальный GCSP
+    'A6_MIN_GCSP':      -gcsp_arr,                          
     'A7_BALANCED':      real_score / np.where(gcsp_arr > 0, gcsp_arr, 1.0),
     'A8_WIDE_GAGE':     gage_range,
 }
@@ -138,12 +130,9 @@ for name, ranking in algorithms.items():
         'min_len':    float(row['min_len']),
         'max_len':    float(row['max_len']),
         'group':      row['machine_group'],
-        # топ-5 индексов по этому алгоритму
         'top5_idx':   set(np.argsort(ranking)[::-1][:5].tolist()),
     }
 
-
-# ─── 4. NN-предсказание ───────────────────────────────────────────────────────
 
 mp = os.path.join(MODELS_DIR, 'CUTTING', 'model.pkl')
 nn_available = os.path.exists(mp)
@@ -190,22 +179,15 @@ else:
     nn_result = None
 
 
-# ─── 5. Абсолютный оптимум (A1) ───────────────────────────────────────────────
-
 optimum = algo_results['A1_MAX_SCORE']
 opt_score = optimum['score']
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ВЫВОД
-# ═══════════════════════════════════════════════════════════════════════════════
 
 log()
 log('  ' + '═' * W)
 log(f'  {"📊  АЛГОРИТМИЧЕСКИЙ АНАЛИЗ":^{W}}')
 log('  ' + '═' * W)
 
-# ─── Таблица алгоритмов ───────────────────────────────────────────────────────
 
 log()
 log(f'  {"Алгоритм":<22} {"Строка":>6} {"Score":>6} {"LP":>4} {"LPFA":>5} '
@@ -218,8 +200,6 @@ for name, r in algo_results.items():
     log(f'  {name:<22} {r["excel_row"]:>6} {r["score"]:>6} {r["lp"]:>4} '
         f'{r["lpfa"]:>5} {r["hv"]:>4} {r["gcsp"]:>7.2f}  '
         f'{bbar}  {pct:5.1f}%')
-
-# ─── NN vs алгоритмы ─────────────────────────────────────────────────────────
 
 if nn_result:
     log()
@@ -245,7 +225,6 @@ if nn_result:
         f'({score_gap/total_ops*100:.1f}% от всех операций)')
     log()
 
-    # Сравнение с каждым алгоритмом
     log(f'  {"Алгоритм":<22} {"Top1":^6} {"Top5":^6} '
         f'{"Gap score":>10} {"% от оптимума":>14} {"NN rank":>8}')
     log('  ' + '─' * W)
@@ -274,8 +253,6 @@ if nn_result:
         f'({matches_top1/n_algo*100:.0f}%)')
     log(f'  NN вошёл в Top-5 алгоритма:  {matches_top5}/{n_algo}  '
         f'({matches_top5/n_algo*100:.0f}%)')
-
-    # ─── Полная сводка провода NN ──────────────────────────────────────────────
 
     log()
     log('  ' + '═' * W)
@@ -306,7 +283,6 @@ if nn_result:
     log(f'    {"High Voltage":<20}: {nn_result["hv"]:3d} / {hv_total:2d}  '
         f'  {bar(nn_result["hv"], hv_total, 20)}  {pct_hv:5.1f}%')
 
-    # ─── Распределение всех проводов с отметкой NN ────────────────────────────
 
     log()
     log(f'  Распределение score по всем {len(df)} проводам:')
@@ -322,7 +298,6 @@ if nn_result:
         opt_here = ' ← OPT' if mask[optimum['idx']] else ''
         log(f'    [{lo:5.0f}–{hi:5.0f}]: {cnt:4d}  {bbar_s}{nn_here}{opt_here}')
 
-    # ─── Топ-10 проводов по реальному score ───────────────────────────────────
 
     log()
     log(f'  Топ-10 проводов по реальному score:')
@@ -339,7 +314,7 @@ if nn_result:
             f'{int(real_hv[idx]):>4} {row["gcsp"]:>7.2f}  '
             f'[{row["min_gage"]:5.1f}–{row["max_gage"]:5.1f}]  {mark}')
 
-    # ─── Вердикт ──────────────────────────────────────────────────────────────
+
 
     log()
     log('  ' + '═' * W)
@@ -347,7 +322,6 @@ if nn_result:
     log('  ' + '═' * W)
     log()
 
-    # Оцениваем качество NN
     if pct_optimum >= 99.0:
         verdict = '🟢 ОТЛИЧНО  — NN нашла абсолютный оптимум'
     elif pct_optimum >= 95.0:
@@ -370,7 +344,6 @@ if nn_result:
         f'({score_gap/total_ops*100:.1f}% от всех)')
     log()
 
-    # Сравнение с наивным baseline (A6: просто самый быстрый провод)
     baseline_score = algo_results['A6_MIN_GCSP']['score']
     gain_vs_baseline = nn_result['score'] - baseline_score
     log(f'  NN vs baseline (быстрейший провод):')
@@ -380,8 +353,6 @@ if nn_result:
     log(f'    Прирост NN:    +{gain_vs_baseline} операций  '
         f'({gain_vs_baseline/total_ops*100:.1f}% от всех)')
 
-
-# ─── CSV результаты ───────────────────────────────────────────────────────────
 
 rows_csv = []
 for i, (_, row) in enumerate(df.iterrows()):

@@ -33,10 +33,10 @@ def train_and_save(sheet_name, X, y, feature_cols, epochs=3000, sample_weight=No
 
     ai = MiniAI(
         input_size=len(feature_cols),
-        hidden=(128, 64, 32),     # глубже — больше мощности
+        hidden=(128, 64, 32),    
         epochs=epochs,
         lr=0.001,
-        log_target=False,         # score уже в линейном масштабе
+        log_target=False,      
         batch_size=512,
         patience=500,
         dropout=0.1,
@@ -47,7 +47,6 @@ def train_and_save(sheet_name, X, y, feature_cols, epochs=3000, sample_weight=No
     return ai
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 
 session_start = datetime.datetime.now()
 W = 70
@@ -61,8 +60,6 @@ log('  ' + '═' * W)
 
 all_results = []
 
-
-# ─── 1. CUTTING — главная модель ──────────────────────────────────────────────
 
 log()
 log('  ' + '=' * W)
@@ -85,7 +82,6 @@ total_ops = sum(len(v) for v in filters_dict.values())
 log(f'  Итого операций с ограничениями: {total_ops}')
 log()
 
-# ─── Вычисляем target для каждого провода ────────────────────────────────────
 
 log('  Вычисление score для каждого провода...')
 scores_total = []
@@ -116,7 +112,7 @@ log(f'    LPFA: min={y_lpfa.min():.0f} max={y_lpfa.max():.0f} mean={y_lpfa.mean(
 log(f'    HV:   min={y_hv.min():.0f} max={y_hv.max():.0f} mean={y_hv.mean():.1f}')
 log()
 
-# Распределение
+
 n_bins = 10
 bin_edges = np.linspace(y_scores.min(), y_scores.max(), n_bins + 1)
 log('  Распределение score:')
@@ -127,20 +123,19 @@ for i in range(n_bins):
     log(f'    [{lo_b:5.0f}–{hi_b:5.0f}]: {cnt:4d}  {bar}')
 log()
 
-# ─── Фичи + аугментация ──────────────────────────────────────────────────────
 
 _, group_mapping, group_global_mean = _encode_machine_group(df_cutting)
 df_feat = create_cutting_features(df_cutting, group_mapping, group_global_mean)
 X_orig = df_feat[FEATURE_COLS_CUTTING].values
 
-# Аугментация: добавляем шум для обобщения (у нас 575 строк — маловато)
+
 rng = np.random.default_rng(42)
-N_AUG = 15  # сколько раз дублируем с шумом
+N_AUG = 15  
 aug_X_list = [X_orig]
 aug_y_list = [y_scores]
 
 for _ in range(N_AUG):
-    noise = rng.normal(0, 0.02, X_orig.shape)  # 2% шума
+    noise = rng.normal(0, 0.02, X_orig.shape)  
     X_noisy = X_orig + X_orig * noise
     aug_X_list.append(X_noisy)
     aug_y_list.append(y_scores)
@@ -152,14 +147,12 @@ log(f'  Обучающая выборка после аугментации: {le
 log(f'  (оригинал: {len(X_orig)}, ×{N_AUG + 1} с Gaussian noise 2%)')
 log()
 
-# Взвешиваем: провода с высоким score важнее
 y_norm = (y - y.min()) / (y.max() - y.min() + 1e-8)
-sample_weight = 1.0 + 4.0 * y_norm  # вес от 1 до 5
+sample_weight = 1.0 + 4.0 * y_norm 
 
 log(f'  Веса обучающих примеров: min={sample_weight.min():.2f} max={sample_weight.max():.2f}')
 log()
 
-# ─── Обучение ─────────────────────────────────────────────────────────────────
 
 ai_cutting = train_and_save(
     'CUTTING', X, y,
@@ -168,7 +161,6 @@ ai_cutting = train_and_save(
     sample_weight=sample_weight,
 )
 
-# Сохраняем вспомогательные данные
 ai_cutting.group_mapping      = group_mapping
 ai_cutting.group_global_mean  = group_global_mean
 ai_cutting.filters_dict       = filters_dict
@@ -178,7 +170,6 @@ ai_cutting.df_cutting_meta    = df_cutting[['excel_row', 'machine_group',
                                             'gcsp']].reset_index(drop=True)
 ai_cutting.save(os.path.join(MODELS_DIR, 'CUTTING', 'model.pkl'))
 
-# Проверка на оригинальных данных
 preds_orig = ai_cutting.predict(X_orig)
 ranking = preds_orig * 10000.0 - df_cutting['gcsp'].values
 best_idx = int(np.argmax(ranking))
@@ -197,7 +188,6 @@ log(f'    GCSP         : {best_row["gcsp"]:.4f}  сек/шт')
 log(f'    Предсказанный score: {preds_orig[best_idx]:.2f}')
 log(f'    Реальный score:      {real_score}')
 
-# Детализация по пространствам
 mid_g = (best_row['min_gage'] + best_row['max_gage']) / 2
 mid_l = (best_row['min_len']  + best_row['max_len'])  / 2
 _, s_lp, s_lpfa, s_hv = compute_detailed_score(mid_g, mid_l, filters_dict)
@@ -235,8 +225,6 @@ all_results.append({
 })
 
 
-# ─── 2. TOTAL VALUES GCSD ──────────────────────────────────────────────────────
-
 log()
 log('  ' + '=' * W)
 log('  Sheet: TOTAL values GCSD')
@@ -272,8 +260,6 @@ else:
                         'status': '⚠️  skipped'})
 
 
-# ─── 3. GENERIC SHEETS (LEAD PREP, LEAD PREP FA, High Voltage) ────────────────
-
 import pandas as _pd
 
 log()
@@ -303,7 +289,6 @@ for sheet_name in GENERIC_SHEETS:
     med_min_len  = float(df_cutting['min_len'].median())
     med_max_len  = float(df_cutting['max_len'].median())
 
-    # Фичи для generic sheets (GCSP + QTY)
     def make_features(df_rows):
         df_f = df_rows.copy()
         df_f['GCSP_log']   = np.log1p(df_f['GCSP'])
@@ -314,8 +299,6 @@ for sheet_name in GENERIC_SHEETS:
         return df_f
 
     FCOLS = ['GCSP', 'QTY', 'GCSP_log', 'QTY_log', 'GCSP_x_QTY', 'GCSP_sqrt', 'QTY_sqrt']
-
-    # Строим обучающую выборку из реальных строк (×10 аугментация)
     records = []
     rng_g = np.random.default_rng(123)
     for _ in range(10):
@@ -323,7 +306,6 @@ for sheet_name in GENERIC_SHEETS:
             noise = rng_g.normal(0, 0.01)
             records.append({'GCSP': r['GCSP'] * (1 + noise), 'QTY': r['QTY'],
                             'TOTAL': r['TOTAL'], 'source': 'real'})
-    # Слоты — QTY=1, TOTAL=GCSP (предполагаем)
     for _, r in slot_rows.iterrows():
         records.append({'GCSP': r['GCSP'], 'QTY': 1.0,
                         'TOTAL': r['GCSP'], 'source': 'slot'})
@@ -360,15 +342,12 @@ for sheet_name in GENERIC_SHEETS:
                         'status': '✅ trained'})
 
 
-# ─── 4. SIMPLE_QTY_SHEETS — без обучения ─────────────────────────────────────
 
 log()
 log('  ' + '-' * W)
 log(f'  Листы без нейросети (QTY=1 в predict.py): {SIMPLE_QTY_SHEETS}')
 log('  ' + '-' * W)
 
-
-# ─── ИТОГ ─────────────────────────────────────────────────────────────────────
 
 session_elapsed = (datetime.datetime.now() - session_start).total_seconds()
 log()
